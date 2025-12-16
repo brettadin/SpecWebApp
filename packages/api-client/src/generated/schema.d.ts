@@ -38,6 +38,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/datasets/{dataset_id}/annotations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Annotations List */
+        get: operations["annotations_list_datasets__dataset_id__annotations_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/datasets/{dataset_id}/annotations/point": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Annotations Create Point */
+        post: operations["annotations_create_point_datasets__dataset_id__annotations_point_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/datasets/{dataset_id}/annotations/range-x": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Annotations Create Range X */
+        post: operations["annotations_create_range_x_datasets__dataset_id__annotations_range_x_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/datasets/{dataset_id}/annotations/{annotation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Annotations Update */
+        put: operations["annotations_update_datasets__dataset_id__annotations__annotation_id__put"];
+        post?: never;
+        /** Annotations Delete */
+        delete: operations["annotations_delete_datasets__dataset_id__annotations__annotation_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/datasets/{dataset_id}/data": {
         parameters: {
             query?: never;
@@ -49,6 +118,23 @@ export interface paths {
         get: operations["datasets_get_data_datasets__dataset_id__data_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/datasets/{dataset_id}/derived": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Datasets Create Derived */
+        post: operations["datasets_create_derived_datasets__dataset_id__derived_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -110,6 +196,69 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** Annotation */
+        Annotation: {
+            /** Annotation Id */
+            annotation_id?: string;
+            /**
+             * Author User Id
+             * @default local/anonymous
+             */
+            author_user_id: string;
+            /** Created At */
+            created_at: string;
+            /** Dataset Id */
+            dataset_id: string;
+            /** Text */
+            text: string;
+            /** Type */
+            type: string;
+            /** Updated At */
+            updated_at: string;
+            /** X0 */
+            x0?: number | null;
+            /** X1 */
+            x1?: number | null;
+            /** X Unit */
+            x_unit?: string | null;
+            /** Y0 */
+            y0?: number | null;
+            /** Y1 */
+            y1?: number | null;
+            /** Y Unit */
+            y_unit?: string | null;
+        };
+        /** AnnotationCreatePoint */
+        AnnotationCreatePoint: {
+            /** Text */
+            text: string;
+            /** X */
+            x: number;
+            /** Y */
+            y?: number | null;
+        };
+        /** AnnotationCreateRangeX */
+        AnnotationCreateRangeX: {
+            /** Text */
+            text: string;
+            /** X0 */
+            x0: number;
+            /** X1 */
+            x1: number;
+        };
+        /** AnnotationUpdate */
+        AnnotationUpdate: {
+            /** Text */
+            text?: string | null;
+            /** X0 */
+            x0?: number | null;
+            /** X1 */
+            x1?: number | null;
+            /** Y0 */
+            y0?: number | null;
+            /** Y1 */
+            y1?: number | null;
+        };
         /** Body_ingest_commit_ingest_commit_post */
         Body_ingest_commit_ingest_commit_post: {
             /**
@@ -191,6 +340,22 @@ export interface components {
             sha256: string;
             /** Source File Name */
             source_file_name: string;
+        };
+        /** DerivedDatasetCreate */
+        DerivedDatasetCreate: {
+            /** Name */
+            name: string;
+            /**
+             * Transforms
+             * @default []
+             */
+            transforms: {
+                [key: string]: unknown;
+            }[];
+            /** Y */
+            y: number[];
+            /** Y Unit */
+            y_unit?: string | null;
         };
         /** FitsHduCandidate */
         FitsHduCandidate: {
@@ -312,6 +477,177 @@ export interface operations {
             };
         };
     };
+    annotations_list_datasets__dataset_id__annotations_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Annotation"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    annotations_create_point_datasets__dataset_id__annotations_point_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnnotationCreatePoint"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Annotation"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    annotations_create_range_x_datasets__dataset_id__annotations_range_x_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnnotationCreateRangeX"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Annotation"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    annotations_update_datasets__dataset_id__annotations__annotation_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: string;
+                annotation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnnotationUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Annotation"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    annotations_delete_datasets__dataset_id__annotations__annotation_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: string;
+                annotation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     datasets_get_data_datasets__dataset_id__data_get: {
         parameters: {
             query?: never;
@@ -332,6 +668,41 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    datasets_create_derived_datasets__dataset_id__derived_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DerivedDatasetCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatasetDetail"];
                 };
             };
             /** @description Validation Error */

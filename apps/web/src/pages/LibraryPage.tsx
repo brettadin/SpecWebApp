@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 
 type IngestPreviewResponse = {
   file_name: string
@@ -175,7 +176,14 @@ export function LibraryPage() {
       </label>
 
       {busy ? <p>Previewing…</p> : null}
-      {error ? <p style={{ color: 'crimson' }}>{error}</p> : null}
+      {error ? (
+        <div style={{ border: '1px solid #e5e7eb', padding: '0.5rem', marginTop: '0.5rem' }}>
+          <p style={{ color: 'crimson', margin: 0 }}>{error}</p>
+          <p style={{ marginTop: '0.25rem', marginBottom: 0 }}>
+            <Link to="/docs?doc=cap-01&q=messy%20csv">Learn more: common import/preview issues</Link>
+          </p>
+        </div>
+      ) : null}
 
       {preview ? (
         <div style={{ marginTop: '1rem' }}>

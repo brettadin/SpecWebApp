@@ -72,6 +72,9 @@ def save_dataset(
     created_at = datetime.now(tz=UTC).isoformat()
     sha = sha256_bytes(raw)
 
+    # Ensure persisted metadata matches the stored raw bytes.
+    parsed["sha256"] = sha
+
     ds_dir = datasets_root() / dataset_id
     ds_dir.mkdir(parents=True, exist_ok=False)
 

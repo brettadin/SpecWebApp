@@ -1,0 +1,172 @@
+from __future__ import annotations
+
+import json
+import uuid
+from datetime import UTC, datetime
+from pathlib import Path
+
+from pydantic import BaseModel, Field
+
+from .datasets import datasets_root, get_dataset_detail
+
+
+class AnnotationBase(BaseModel):
+    type: str
+    text: str
+    author_user_id: str = "local/anonymous"
+    created_at: str
+    updated_at: str
+
+    x_unit: str | None = None
+    y_unit: str | None = None
+
+    # Coordinates are stored in dataset-native units.
+    x0: float | None = None
+    x1: float | None = None
+    y0: float | None = None
+    y1: float | None = None
+
+
+class Annotation(AnnotationBase):
+    annotation_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    dataset_id: str
+
+
+class AnnotationCreatePoint(BaseModel):
+    text: str
+    x: float
+    y: float | None = None
+
+
+class AnnotationCreateRangeX(BaseModel):
+    text: str
+    x0: float
+    x1: float
+
+
+class AnnotationUpdate(BaseModel):
+    text: str | None = None
+    x0: float | None = None
+    x1: float | None = None
+    y0: float | None = None
+    y1: float | None = None
+
+
+def _annotations_path(dataset_id: str) -> Path:
+    return datasets_root() / dataset_id / "annotations.json"
+
+
+def _load_annotations(dataset_id: str) -> list[Annotation]:
+    path = _annotations_path(dataset_id)
+    if not path.exists():
+        return []
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, list):
+        return []
+    out: list[Annotation] = []
+    for item in raw:
+        try:
+            out.append(Annotation.model_validate(item))
+        except Exception:
+            continue
+    return out
+
+
+def _write_annotations(dataset_id: str, annotations: list[Annotation]) -> None:
+    path = _annotations_path(dataset_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = [a.model_dump() for a in annotations]
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def list_annotations(dataset_id: str) -> list[Annotation]:
+    # Ensure dataset exists.
+    _ = get_dataset_detail(dataset_id)
+    return _load_annotations(dataset_id)
+
+
+def create_point_note(dataset_id: str, req: AnnotationCreatePoint) -> Annotation:
+    detail = get_dataset_detail(dataset_id)
+
+    now = datetime.now(tz=UTC).isoformat()
+    ann = Annotation(
+        dataset_id=dataset_id,
+        type="point",
+        text=req.text,
+        created_at=now,
+        updated_at=now,
+        x_unit=detail.x_unit,
+        y_unit=detail.y_unit,
+        x0=float(req.x),
+        y0=float(req.y) if req.y is not None else None,
+    )
+
+    annotations = _load_annotations(dataset_id)
+    annotations.append(ann)
+    _write_annotations(dataset_id, annotations)
+    return ann
+
+
+def create_range_x(dataset_id: str, req: AnnotationCreateRangeX) -> Annotation:
+    detail = get_dataset_detail(dataset_id)
+
+    x0 = float(req.x0)
+    x1 = float(req.x1)
+    if x1 < x0:
+        x0, x1 = x1, x0
+
+    now = datetime.now(tz=UTC).isoformat()
+    ann = Annotation(
+        dataset_id=dataset_id,
+        type="range_x",
+        text=req.text,
+        created_at=now,
+        updated_at=now,
+        x_unit=detail.x_unit,
+        y_unit=detail.y_unit,
+        x0=x0,
+        x1=x1,
+    )
+
+    annotations = _load_annotations(dataset_id)
+    annotations.append(ann)
+    _write_annotations(dataset_id, annotations)
+    return ann
+
+
+def update_annotation(dataset_id: str, annotation_id: str, req: AnnotationUpdate) -> Annotation:
+    annotations = _load_annotations(dataset_id)
+    for idx, ann in enumerate(annotations):
+        if ann.annotation_id != annotation_id:
+            continue
+
+        changed = ann.model_copy(deep=True)
+        if req.text is not None:
+            changed.text = req.text
+        if req.x0 is not None:
+            changed.x0 = float(req.x0)
+        if req.x1 is not None:
+            changed.x1 = float(req.x1)
+        if req.y0 is not None:
+            changed.y0 = float(req.y0)
+        if req.y1 is not None:
+            changed.y1 = float(req.y1)
+
+        # Keep range ordering invariant.
+        if changed.type == "range_x" and changed.x0 is not None and changed.x1 is not None:
+            if changed.x1 < changed.x0:
+                changed.x0, changed.x1 = changed.x1, changed.x0
+
+        changed.updated_at = datetime.now(tz=UTC).isoformat()
+
+        annotations[idx] = changed
+        _write_annotations(dataset_id, annotations)
+        return changed
+
+    raise FileNotFoundError("Annotation not found")
+
+
+def delete_annotation(dataset_id: str, annotation_id: str) -> None:
+    annotations = _load_annotations(dataset_id)
+    kept = [a for a in annotations if a.annotation_id != annotation_id]
+    _write_annotations(dataset_id, kept)
