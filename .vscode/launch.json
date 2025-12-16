@@ -1,0 +1,48 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "API: Debug (uvicorn)",
+      "type": "python",
+      "request": "launch",
+      "module": "uvicorn",
+      "cwd": "${workspaceFolder}/apps/api",
+      "python": "${workspaceFolder}/apps/api/.venv/Scripts/python.exe",
+      "pythonPath": "${workspaceFolder}/apps/api/.venv/Scripts/python.exe",
+      "args": [
+        "app.main:app",
+        "--reload",
+        "--port",
+        "8000"
+      ],
+      "env": {
+        "PYTHONUNBUFFERED": "1"
+      },
+      "subProcess": true,
+      "serverReadyAction": {
+        "pattern": "Uvicorn running on (http://\\S+)",
+        "uriFormat": "%s/docs",
+        "action": "openExternally"
+      },
+      "justMyCode": true
+    },
+    {
+      "name": "Web: Debug (Chrome)",
+      "type": "pwa-chrome",
+      "request": "launch",
+      "url": "http://localhost:5173",
+      "webRoot": "${workspaceFolder}/apps/web/src",
+      "preLaunchTask": "Web: dev",
+      "timeout": 60000
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Full Stack: Debug",
+      "configurations": [
+        "API: Debug (uvicorn)",
+        "Web: Debug (Chrome)"
+      ]
+    }
+  ]
+}
