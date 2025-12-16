@@ -153,4 +153,6 @@ def get_dataset_xy(dataset_id: str) -> dict:
         "y": meta.get("y", []),
         "x_unit": meta.get("x_unit"),
         "y_unit": meta.get("y_unit"),
+        # Optional CAP-07 metadata used by UI for trust-first display.
+        "reference": meta.get("reference"),
     }

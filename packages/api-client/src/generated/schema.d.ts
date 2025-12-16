@@ -192,6 +192,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/references/import/jcamp-dx": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** References Import Jcamp Dx */
+        post: operations["references_import_jcamp_dx_references_import_jcamp_dx_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/references/import/line-list-csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** References Import Line List Csv */
+        post: operations["references_import_line_list_csv_references_import_line_list_csv_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -407,6 +441,141 @@ export interface components {
             x_unit_hint: string | null;
             /** Y Unit Hint */
             y_unit_hint: string | null;
+        };
+        /** ReferenceImportJCAMPRequest */
+        ReferenceImportJCAMPRequest: {
+            /** Citation Text */
+            citation_text: string;
+            /**
+             * Data Type
+             * @default Spectrum
+             * @enum {string}
+             */
+            data_type: "Spectrum" | "LineList" | "BandRanges" | "CrossSection" | "KTable" | "MetaOnly";
+            /**
+             * @default {
+             *       "redistribution_allowed": "unknown"
+             *     }
+             */
+            license: components["schemas"]["ReferenceLicense"];
+            /**
+             * Query
+             * @default {}
+             */
+            query: {
+                [key: string]: unknown;
+            };
+            /** Retrieved At */
+            retrieved_at?: string | null;
+            /** Source Name */
+            source_name: string;
+            /**
+             * Source Type
+             * @default ReferenceDatabase
+             * @enum {string}
+             */
+            source_type: "Lab" | "UserUpload" | "ReferenceDatabase" | "LineListDB" | "Modeled/ComputedLibrary" | "Other";
+            /**
+             * Source Url
+             * Format: uri
+             */
+            source_url: string;
+            /** Title */
+            title: string;
+            /**
+             * Trust Tier
+             * @default Unknown
+             * @enum {string}
+             */
+            trust_tier: "Primary/Authoritative" | "PeerReviewed/Curated" | "Community/Derived" | "Unknown";
+            /** X Unit */
+            x_unit?: string | null;
+            /** Y Unit */
+            y_unit?: string | null;
+        };
+        /** ReferenceImportLineListCSVRequest */
+        ReferenceImportLineListCSVRequest: {
+            /** Citation Text */
+            citation_text: string;
+            /**
+             * Data Type
+             * @default LineList
+             * @enum {string}
+             */
+            data_type: "Spectrum" | "LineList" | "BandRanges" | "CrossSection" | "KTable" | "MetaOnly";
+            /**
+             * Delimiter
+             * @default ,
+             */
+            delimiter: string;
+            /**
+             * Has Header
+             * @default true
+             */
+            has_header: boolean;
+            /**
+             * @default {
+             *       "redistribution_allowed": "unknown"
+             *     }
+             */
+            license: components["schemas"]["ReferenceLicense"];
+            /**
+             * Query
+             * @default {}
+             */
+            query: {
+                [key: string]: unknown;
+            };
+            /** Retrieved At */
+            retrieved_at?: string | null;
+            /** Source Name */
+            source_name: string;
+            /**
+             * Source Type
+             * @default LineListDB
+             * @enum {string}
+             */
+            source_type: "Lab" | "UserUpload" | "ReferenceDatabase" | "LineListDB" | "Modeled/ComputedLibrary" | "Other";
+            /**
+             * Source Url
+             * Format: uri
+             */
+            source_url: string;
+            /**
+             * Strength Index
+             * @default 1
+             */
+            strength_index: number | null;
+            /** Title */
+            title: string;
+            /**
+             * Trust Tier
+             * @default Unknown
+             * @enum {string}
+             */
+            trust_tier: "Primary/Authoritative" | "PeerReviewed/Curated" | "Community/Derived" | "Unknown";
+            /**
+             * X Index
+             * @default 0
+             */
+            x_index: number;
+            /** X Unit */
+            x_unit?: string | null;
+            /** Y Unit */
+            y_unit?: string | null;
+        };
+        /** ReferenceLicense */
+        ReferenceLicense: {
+            /** License Id */
+            license_id?: string | null;
+            /** License Text */
+            license_text?: string | null;
+            /**
+             * Redistribution Allowed
+             * @default unknown
+             * @enum {string}
+             */
+            redistribution_allowed: "yes" | "no" | "unknown";
         };
         /** ValidationError */
         ValidationError: {
@@ -794,6 +963,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["IngestPreviewResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    references_import_jcamp_dx_references_import_jcamp_dx_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReferenceImportJCAMPRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatasetDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    references_import_line_list_csv_references_import_line_list_csv_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReferenceImportLineListCSVRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatasetDetail"];
                 };
             };
             /** @description Validation Error */

@@ -661,6 +661,297 @@
         "title": "IngestPreviewResponse",
         "type": "object"
       },
+      "ReferenceImportJCAMPRequest": {
+        "properties": {
+          "citation_text": {
+            "title": "Citation Text",
+            "type": "string"
+          },
+          "data_type": {
+            "default": "Spectrum",
+            "enum": [
+              "Spectrum",
+              "LineList",
+              "BandRanges",
+              "CrossSection",
+              "KTable",
+              "MetaOnly"
+            ],
+            "title": "Data Type",
+            "type": "string"
+          },
+          "license": {
+            "$ref": "#/components/schemas/ReferenceLicense",
+            "default": {
+              "redistribution_allowed": "unknown"
+            }
+          },
+          "query": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Query",
+            "type": "object"
+          },
+          "retrieved_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retrieved At"
+          },
+          "source_name": {
+            "title": "Source Name",
+            "type": "string"
+          },
+          "source_type": {
+            "default": "ReferenceDatabase",
+            "enum": [
+              "Lab",
+              "UserUpload",
+              "ReferenceDatabase",
+              "LineListDB",
+              "Modeled/ComputedLibrary",
+              "Other"
+            ],
+            "title": "Source Type",
+            "type": "string"
+          },
+          "source_url": {
+            "format": "uri",
+            "maxLength": 2083,
+            "minLength": 1,
+            "title": "Source Url",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "trust_tier": {
+            "default": "Unknown",
+            "enum": [
+              "Primary/Authoritative",
+              "PeerReviewed/Curated",
+              "Community/Derived",
+              "Unknown"
+            ],
+            "title": "Trust Tier",
+            "type": "string"
+          },
+          "x_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X Unit"
+          },
+          "y_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Y Unit"
+          }
+        },
+        "required": [
+          "title",
+          "source_name",
+          "source_url",
+          "citation_text"
+        ],
+        "title": "ReferenceImportJCAMPRequest",
+        "type": "object"
+      },
+      "ReferenceImportLineListCSVRequest": {
+        "properties": {
+          "citation_text": {
+            "title": "Citation Text",
+            "type": "string"
+          },
+          "data_type": {
+            "default": "LineList",
+            "enum": [
+              "Spectrum",
+              "LineList",
+              "BandRanges",
+              "CrossSection",
+              "KTable",
+              "MetaOnly"
+            ],
+            "title": "Data Type",
+            "type": "string"
+          },
+          "delimiter": {
+            "default": ",",
+            "title": "Delimiter",
+            "type": "string"
+          },
+          "has_header": {
+            "default": true,
+            "title": "Has Header",
+            "type": "boolean"
+          },
+          "license": {
+            "$ref": "#/components/schemas/ReferenceLicense",
+            "default": {
+              "redistribution_allowed": "unknown"
+            }
+          },
+          "query": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Query",
+            "type": "object"
+          },
+          "retrieved_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retrieved At"
+          },
+          "source_name": {
+            "title": "Source Name",
+            "type": "string"
+          },
+          "source_type": {
+            "default": "LineListDB",
+            "enum": [
+              "Lab",
+              "UserUpload",
+              "ReferenceDatabase",
+              "LineListDB",
+              "Modeled/ComputedLibrary",
+              "Other"
+            ],
+            "title": "Source Type",
+            "type": "string"
+          },
+          "source_url": {
+            "format": "uri",
+            "maxLength": 2083,
+            "minLength": 1,
+            "title": "Source Url",
+            "type": "string"
+          },
+          "strength_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": 1,
+            "title": "Strength Index"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "trust_tier": {
+            "default": "Unknown",
+            "enum": [
+              "Primary/Authoritative",
+              "PeerReviewed/Curated",
+              "Community/Derived",
+              "Unknown"
+            ],
+            "title": "Trust Tier",
+            "type": "string"
+          },
+          "x_index": {
+            "default": 0,
+            "title": "X Index",
+            "type": "integer"
+          },
+          "x_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X Unit"
+          },
+          "y_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Y Unit"
+          }
+        },
+        "required": [
+          "title",
+          "source_name",
+          "source_url",
+          "citation_text"
+        ],
+        "title": "ReferenceImportLineListCSVRequest",
+        "type": "object"
+      },
+      "ReferenceLicense": {
+        "properties": {
+          "license_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "License Id"
+          },
+          "license_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "License Text"
+          },
+          "redistribution_allowed": {
+            "default": "unknown",
+            "enum": [
+              "yes",
+              "no",
+              "unknown"
+            ],
+            "title": "Redistribution Allowed",
+            "type": "string"
+          }
+        },
+        "title": "ReferenceLicense",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "loc": {
@@ -1222,6 +1513,82 @@
           }
         },
         "summary": "Ingest Preview"
+      }
+    },
+    "/references/import/jcamp-dx": {
+      "post": {
+        "operationId": "references_import_jcamp_dx_references_import_jcamp_dx_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReferenceImportJCAMPRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "References Import Jcamp Dx"
+      }
+    },
+    "/references/import/line-list-csv": {
+      "post": {
+        "operationId": "references_import_line_list_csv_references_import_line_list_csv_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReferenceImportLineListCSVRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "References Import Line List Csv"
       }
     }
   }

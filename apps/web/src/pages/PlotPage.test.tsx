@@ -147,4 +147,135 @@ describe('PlotPage (CAP-03)', () => {
       expect(layout.shapes.length).toBeGreaterThan(0)
     })
   })
+
+  it('computes A-B differential and adds a derived trace', async () => {
+    const fetchMock = vi.fn(async (url: string): Promise<MockResponse> => {
+      if (url.endsWith('/datasets')) {
+        return {
+          ok: true,
+          json: async () => [
+            {
+              id: 'ds-1',
+              name: 'A trace',
+              created_at: '2025-12-16T00:00:00Z',
+              source_file_name: 'a.csv',
+              sha256: 'x',
+            },
+            {
+              id: 'ds-2',
+              name: 'B trace',
+              created_at: '2025-12-16T00:00:00Z',
+              source_file_name: 'b.csv',
+              sha256: 'y',
+            },
+          ],
+        }
+      }
+
+      if (url.includes('/datasets/ds-1/data')) {
+        return {
+          ok: true,
+          json: async () => ({ id: 'ds-1', x: [1, 2, 3], y: [10, 20, 30], x_unit: 'nm', y_unit: 'arb' }),
+        }
+      }
+
+      if (url.includes('/datasets/ds-2/data')) {
+        return {
+          ok: true,
+          json: async () => ({ id: 'ds-2', x: [1, 2, 3], y: [1, 2, 3], x_unit: 'nm', y_unit: 'arb' }),
+        }
+      }
+
+      if (url.includes('/annotations')) {
+        return { ok: true, json: async () => [] }
+      }
+
+      return { ok: false, status: 404, text: async () => 'not found' }
+    })
+
+    vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch)
+
+    render(
+      <MemoryRouter initialEntries={['/plot']}>
+        <PlotPage />
+      </MemoryRouter>,
+    )
+
+    await screen.findByText('A trace')
+    await screen.findByText('B trace')
+
+    // Load both series by toggling visible.
+    fireEvent.click(screen.getByLabelText('Toggle A trace'))
+    fireEvent.click(screen.getByLabelText('Toggle B trace'))
+
+    // Select A and B in differential panel.
+    fireEvent.change(screen.getByLabelText('Trace A'), { target: { value: 'o:ds-1' } })
+    fireEvent.change(screen.getByLabelText('Trace B'), { target: { value: 'o:ds-2' } })
+
+    fireEvent.click(screen.getByText('Compute'))
+
+    await waitFor(() => {
+      const plot = screen.getByTestId('plotly')
+      const traces = JSON.parse(plot.getAttribute('data-traces') || '[]')
+      // Should include a derived trace with CAP-06 prefix.
+      expect(traces.some((t: { name?: string }) => (t.name ?? '').includes('A-B'))).toBe(true)
+    })
+  })
+
+  it('renders line list datasets as stick bars (CAP-07)', async () => {
+    const fetchMock = vi.fn(async (url: string): Promise<MockResponse> => {
+      if (url.endsWith('/datasets')) {
+        return {
+          ok: true,
+          json: async () => [
+            {
+              id: 'lines-1',
+              name: 'NIST ASD Lines',
+              created_at: '2025-12-16T00:00:00Z',
+              source_file_name: 'lines.csv',
+              sha256: 'z',
+            },
+          ],
+        }
+      }
+
+      if (url.includes('/datasets/lines-1/data')) {
+        return {
+          ok: true,
+          json: async () => ({
+            id: 'lines-1',
+            x: [500, 600, 700],
+            y: [1, 2, 3],
+            x_unit: 'nm',
+            y_unit: null,
+            reference: { data_type: 'LineList', source_name: 'NIST ASD', citation_text: 'cite' },
+          }),
+        }
+      }
+
+      if (url.includes('/annotations')) {
+        return { ok: true, json: async () => [] }
+      }
+
+      return { ok: false, status: 404, text: async () => 'not found' }
+    })
+
+    vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch)
+
+    render(
+      <MemoryRouter initialEntries={['/plot']}>
+        <PlotPage />
+      </MemoryRouter>,
+    )
+
+    await screen.findByText('NIST ASD Lines')
+    fireEvent.click(screen.getByLabelText('Toggle NIST ASD Lines'))
+
+    await waitFor(() => {
+      const plot = screen.getByTestId('plotly')
+      const traces = JSON.parse(plot.getAttribute('data-traces') || '[]')
+      expect(traces).toHaveLength(1)
+      expect(traces[0].type).toBe('bar')
+    })
+  })
 })

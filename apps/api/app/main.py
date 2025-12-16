@@ -31,6 +31,12 @@ from .datasets import (
     sha256_bytes,
 )
 from .ingest_preview import IngestPreviewResponse, build_ingest_preview, parse_delimited_xy
+from .reference_import import (
+    ReferenceImportJCAMPRequest,
+    ReferenceImportLineListCSVRequest,
+    import_reference_jcamp_dx,
+    import_reference_line_list_csv,
+)
 from .version import read_version
 
 app = FastAPI(title="Spectra App API", version=read_version().get("version", "0.0.0"))
@@ -293,6 +299,32 @@ def datasets_create_derived(dataset_id: str, req: DerivedDatasetCreate) -> Datas
     )
 
     return detail
+
+
+@app.post("/references/import/jcamp-dx", response_model=DatasetDetail)
+def references_import_jcamp_dx(req: ReferenceImportJCAMPRequest) -> DatasetDetail:
+    # CAP-07 MVP: server fetch + parse of JCAMP-DX with citation-first metadata.
+    try:
+        return import_reference_jcamp_dx(req)
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+    except TimeoutError as err:
+        raise HTTPException(status_code=504, detail=str(err)) from err
+    except Exception as err:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=str(err)) from err
+
+
+@app.post("/references/import/line-list-csv", response_model=DatasetDetail)
+def references_import_line_list_csv(req: ReferenceImportLineListCSVRequest) -> DatasetDetail:
+    # CAP-07 MVP: line-list import (CSV/tab) by URL with citation-first metadata.
+    try:
+        return import_reference_line_list_csv(req)
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+    except TimeoutError as err:
+        raise HTTPException(status_code=504, detail=str(err)) from err
+    except Exception as err:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=str(err)) from err
 
 
 @app.get("/datasets/{dataset_id}/annotations", response_model=list[Annotation])

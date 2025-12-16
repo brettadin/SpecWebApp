@@ -14,6 +14,7 @@
 - CAP-03 (plotting): `apps/web/src/pages/PlotPage.tsx` + API `GET /datasets/{id}/data`
 - CAP-04 (annotations): API `GET/POST/PUT/DELETE /datasets/{id}/annotations...` + UI in `apps/web/src/pages/PlotPage.tsx`
 - CAP-05 (transforms): UI transform panel + derived traces (`apps/web/src/pages/PlotPage.tsx`, `apps/web/src/lib/transforms.ts`) + API `POST /datasets/{id}/derived`
+- CAP-06 (differential): UI differential panel + derived traces (`apps/web/src/pages/PlotPage.tsx`, `apps/web/src/lib/transforms.ts`)
 
 ## Wiring map (minimum examples)
 
@@ -31,3 +32,6 @@
 - UI: Plot page
 - Control: apply transforms -> handler: `onApplyTransforms()` -> derived traces created in-session (non-destructive)
 - Control: save derived -> handler: `onSaveDerivedToLibrary()` -> API: `POST /datasets/{id}/derived`
+
+- UI: Plot page
+- Control: compute differential -> handler: `onComputeDifferential()` -> logic: `differentialCompare()` (optionally `alignToTargetGrid()`) -> derived trace created in-session

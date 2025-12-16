@@ -6,6 +6,12 @@ export type BaselineMode = 'none' | 'poly'
 
 export type SmoothingMode = 'none' | 'savgol'
 
+export type AlignmentMethod = 'none' | 'nearest' | 'linear' | 'pchip'
+
+export type DifferentialOp = 'A-B' | 'A/B'
+
+export type RatioHandling = 'mask'
+
 export type XUnitCanonical = 'nm' | 'Å' | 'µm' | 'cm⁻¹'
 
 export function normalizeXUnit(unit: string | null): XUnitCanonical | null {
@@ -431,4 +437,266 @@ export function savitzkyGolaySmooth(y: number[], params: SavitzkyGolayParams): n
     out[i] = acc
   }
   return out
+}
+
+function isMonotoneIncreasing(x: number[]): boolean {
+  for (let i = 1; i < x.length; i++) {
+    if (x[i] < x[i - 1]) return false
+  }
+  return true
+}
+
+function overlapRange(a: number[], b: number[]): { lo: number; hi: number } | null {
+  if (!a.length || !b.length) return null
+  const lo = Math.max(a[0], b[0])
+  const hi = Math.min(a[a.length - 1], b[b.length - 1])
+  if (!(lo <= hi)) return null
+  return { lo, hi }
+}
+
+function lowerBound(x: number[], value: number): number {
+  let lo = 0
+  let hi = x.length
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1
+    if (x[mid] < value) lo = mid + 1
+    else hi = mid
+  }
+  return lo
+}
+
+function interpNearest(x: number[], y: number[], xq: number): number {
+  const i = lowerBound(x, xq)
+  if (i <= 0) return y[0]
+  if (i >= x.length) return y[x.length - 1]
+  const left = i - 1
+  const right = i
+  return Math.abs(xq - x[left]) <= Math.abs(xq - x[right]) ? y[left] : y[right]
+}
+
+function interpLinear(x: number[], y: number[], xq: number): number {
+  const i = lowerBound(x, xq)
+  if (i <= 0) return y[0]
+  if (i >= x.length) return y[x.length - 1]
+  const x0 = x[i - 1]
+  const x1 = x[i]
+  const y0 = y[i - 1]
+  const y1 = y[i]
+  if (x1 === x0) return y0
+  const t = (xq - x0) / (x1 - x0)
+  return y0 + t * (y1 - y0)
+}
+
+function pchipSlopes(x: number[], y: number[]): number[] {
+  // Fritsch–Carlson monotone cubic Hermite slopes.
+  const n = x.length
+  const h = new Array<number>(n - 1)
+  const d = new Array<number>(n - 1)
+  for (let i = 0; i < n - 1; i++) {
+    h[i] = x[i + 1] - x[i]
+    d[i] = (y[i + 1] - y[i]) / h[i]
+  }
+
+  const m = new Array<number>(n)
+  m[0] = d[0]
+  m[n - 1] = d[n - 2]
+
+  for (let i = 1; i < n - 1; i++) {
+    if (d[i - 1] === 0 || d[i] === 0 || (d[i - 1] > 0) !== (d[i] > 0)) {
+      m[i] = 0
+      continue
+    }
+    const w1 = 2 * h[i] + h[i - 1]
+    const w2 = h[i] + 2 * h[i - 1]
+    m[i] = (w1 + w2) / (w1 / d[i - 1] + w2 / d[i])
+  }
+
+  return m
+}
+
+function interpPchip(x: number[], y: number[], m: number[], xq: number): number {
+  const i = lowerBound(x, xq)
+  const idx = clampIndex(i - 1, 0, x.length - 2)
+  const x0 = x[idx]
+  const x1 = x[idx + 1]
+  const h = x1 - x0
+  if (h === 0) return y[idx]
+
+  const t = (xq - x0) / h
+  const t2 = t * t
+  const t3 = t2 * t
+
+  const h00 = 2 * t3 - 3 * t2 + 1
+  const h10 = t3 - 2 * t2 + t
+  const h01 = -2 * t3 + 3 * t2
+  const h11 = t3 - t2
+
+  return h00 * y[idx] + h10 * h * m[idx] + h01 * y[idx + 1] + h11 * h * m[idx + 1]
+}
+
+export function alignToTargetGrid(
+  sourceX: number[],
+  sourceY: number[],
+  targetX: number[],
+  method: AlignmentMethod,
+  overlapOnly: boolean,
+): { yAligned: number[]; interpolated: boolean; overlap: { lo: number; hi: number } | null } {
+  if (sourceX.length !== sourceY.length) throw new Error('Alignment requires matching source x/y lengths.')
+  if (!isMonotoneIncreasing(sourceX)) throw new Error('Alignment requires monotone increasing X.')
+  if (!isMonotoneIncreasing(targetX)) throw new Error('Alignment requires monotone increasing target X.')
+
+  const overlap = overlapRange(targetX, sourceX)
+  if (overlapOnly && !overlap) {
+    return { yAligned: targetX.map(() => Number.NaN), interpolated: method !== 'none', overlap: null }
+  }
+
+  const lo = overlap?.lo ?? -Infinity
+  const hi = overlap?.hi ?? Infinity
+
+  const out = new Array<number>(targetX.length)
+
+  if (method === 'none') {
+    // Exact join only.
+    const sourceIndex = new Map<number, number>()
+    for (let i = 0; i < sourceX.length; i++) sourceIndex.set(sourceX[i], i)
+    for (let i = 0; i < targetX.length; i++) {
+      const xv = targetX[i]
+      if (overlapOnly && (xv < lo || xv > hi)) {
+        out[i] = Number.NaN
+        continue
+      }
+      const idx = sourceIndex.get(xv)
+      out[i] = idx == null ? Number.NaN : sourceY[idx]
+    }
+    return { yAligned: out, interpolated: false, overlap }
+  }
+
+  const pchipM = method === 'pchip' ? pchipSlopes(sourceX, sourceY) : null
+
+  for (let i = 0; i < targetX.length; i++) {
+    const xv = targetX[i]
+    if (overlapOnly && (xv < lo || xv > hi)) {
+      out[i] = Number.NaN
+      continue
+    }
+    // no extrapolation by default
+    if (xv < sourceX[0] || xv > sourceX[sourceX.length - 1]) {
+      out[i] = Number.NaN
+      continue
+    }
+
+    if (method === 'nearest') out[i] = interpNearest(sourceX, sourceY, xv)
+    else if (method === 'linear') out[i] = interpLinear(sourceX, sourceY, xv)
+    else out[i] = interpPchip(sourceX, sourceY, pchipM as number[], xv)
+  }
+
+  return { yAligned: out, interpolated: true, overlap }
+}
+
+export function differentialCompare(
+  a: { x: number[]; y: number[] },
+  b: { x: number[]; y: number[] },
+  op: DifferentialOp,
+  alignment: { method: AlignmentMethod; target: 'A' | 'B' },
+  ratio: { handling: RatioHandling; tau: number | null },
+): {
+  x: number[]
+  y: number[]
+  warnings: string[]
+  interpolated: boolean
+  overlap: { lo: number; hi: number } | null
+  ratioMask: { tau: number; maskedCount: number } | null
+} {
+  const warnings: string[] = []
+  if (!isMonotoneIncreasing(a.x) || !isMonotoneIncreasing(b.x)) {
+    throw new Error('Non-monotonic X detected; fix upstream ingest or metadata before comparing.')
+  }
+
+  const overlap = overlapRange(a.x, b.x)
+  if (!overlap) {
+    throw new Error('No overlapping X range between A and B. Differential comparison requires overlap.')
+  }
+
+  const targetX = alignment.target === 'A' ? a.x : b.x
+  const other = alignment.target === 'A' ? b : a
+
+  const alignedOther = alignToTargetGrid(other.x, other.y, targetX, alignment.method, false)
+  // Self is already on target grid by definition.
+
+  if (alignment.method === 'none') {
+    // CAP-06: alignment is opt-in. Without alignment, require exact X matches for all points we would compute.
+    const otherIndex = new Set<number>(other.x)
+    for (const xv of targetX) {
+      if (xv < overlap.lo || xv > overlap.hi) continue
+      if (!otherIndex.has(xv)) {
+        throw new Error('X grids differ. Enable alignment (interpolation) or select compatible traces.')
+      }
+    }
+  }
+
+  const yOut = new Array<number>(targetX.length)
+  const interpolated = alignedOther.interpolated
+
+  let ratioMask: { tau: number; maskedCount: number } | null = null
+
+  if (op === 'A-B') {
+    const yA = alignment.target === 'A' ? a.y : alignedOther.yAligned
+    const yB = alignment.target === 'A' ? alignedOther.yAligned : b.y
+    for (let i = 0; i < yOut.length; i++) {
+      const va = yA[i]
+      const vb = yB[i]
+      const xv = targetX[i]
+      if (xv < overlap.lo || xv > overlap.hi) {
+        yOut[i] = Number.NaN
+      } else {
+        yOut[i] = Number.isFinite(va) && Number.isFinite(vb) ? va - vb : Number.NaN
+      }
+    }
+  } else {
+    const yA = alignment.target === 'A' ? a.y : alignedOther.yAligned
+    const yB = alignment.target === 'A' ? alignedOther.yAligned : b.y
+
+    let maxAbsB = 0
+    for (const v of yB) {
+      if (!Number.isFinite(v)) continue
+      maxAbsB = Math.max(maxAbsB, Math.abs(v))
+    }
+    const tau = ratio.tau != null ? ratio.tau : Math.max(1e-12, 1e-6 * maxAbsB)
+
+    let maskedCount = 0
+    for (let i = 0; i < yOut.length; i++) {
+      const xv = targetX[i]
+      if (xv < overlap.lo || xv > overlap.hi) {
+        yOut[i] = Number.NaN
+        continue
+      }
+      const va = yA[i]
+      const vb = yB[i]
+      if (!Number.isFinite(va) || !Number.isFinite(vb)) {
+        yOut[i] = Number.NaN
+        continue
+      }
+      if (Math.abs(vb) < tau) {
+        yOut[i] = Number.NaN
+        maskedCount++
+        continue
+      }
+      yOut[i] = va / vb
+    }
+    if (maskedCount > 0) {
+      warnings.push(`Ratio masked where |B| < τ (τ=${tau}).`)
+      ratioMask = { tau, maskedCount }
+    }
+  }
+
+  if (interpolated) warnings.push('Interpolated alignment used (explicit).')
+
+  return {
+    x: targetX,
+    y: yOut,
+    warnings,
+    interpolated,
+    overlap,
+    ratioMask,
+  }
 }

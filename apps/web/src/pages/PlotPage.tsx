@@ -13,6 +13,10 @@ import {
   type NormalizationMode,
   type RangeSelection,
   type SmoothingMode,
+  differentialCompare,
+  type AlignmentMethod,
+  type DifferentialOp,
+  type RatioHandling,
 } from '../lib/transforms'
 
 type DatasetSummary = {
@@ -29,6 +33,15 @@ type DatasetSeries = {
   y: number[]
   x_unit: string | null
   y_unit: string | null
+  reference?: {
+    source_type?: string
+    data_type?: string
+    trust_tier?: string
+    source_name?: string
+    source_url?: string
+    retrieved_at?: string
+    citation_text?: string
+  } | null
 }
 
 type Annotation = {
@@ -55,7 +68,7 @@ type TraceState = {
 type TransformRecord = {
   transform_id: string
   parent_trace_id: string
-  transform_type: 'normalize' | 'baseline' | 'smooth' | 'unit_display'
+  transform_type: 'normalize' | 'baseline' | 'smooth' | 'unit_display' | 'resample' | 'differential'
   parameters: Record<string, unknown>
   created_at: string
   created_by: string
@@ -117,6 +130,18 @@ export function PlotPage() {
   const [savgolWindow, setSavgolWindow] = useState('9')
   const [savgolPolyorder, setSavgolPolyorder] = useState('2')
 
+  const [diffA, setDiffA] = useState('')
+  const [diffB, setDiffB] = useState('')
+  const [diffLockA, setDiffLockA] = useState(false)
+  const [diffLockB, setDiffLockB] = useState(false)
+  const [diffOp, setDiffOp] = useState<DifferentialOp>('A-B')
+  const [diffAlignmentEnabled, setDiffAlignmentEnabled] = useState(false)
+  const [diffAlignmentMethod, setDiffAlignmentMethod] = useState<AlignmentMethod>('linear')
+  const [diffTargetGrid, setDiffTargetGrid] = useState<'A' | 'B'>('A')
+  const [diffRatioHandling, setDiffRatioHandling] = useState<RatioHandling>('mask')
+  const [diffTau, setDiffTau] = useState('')
+  const [warning, setWarning] = useState<string | null>(null)
+
   const [newAnnotationDatasetId, setNewAnnotationDatasetId] = useState<string>('')
   const [newPointX, setNewPointX] = useState('')
   const [newPointY, setNewPointY] = useState('')
@@ -160,13 +185,19 @@ export function PlotPage() {
     }
   }, [])
 
-  async function ensureSeriesLoaded(datasetId: string) {
-    if (seriesById[datasetId]) return
+  useEffect(() => {
+    if (error) setWarning(null)
+  }, [error])
+
+  async function ensureSeriesLoaded(datasetId: string): Promise<DatasetSeries> {
+    const cached = seriesById[datasetId]
+    if (cached) return cached
 
     const res = await fetch(`${API_BASE}/datasets/${encodeURIComponent(datasetId)}/data`)
     if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`)
     const json = (await res.json()) as DatasetSeries
     setSeriesById((prev) => ({ ...prev, [datasetId]: json }))
+    return json
   }
 
   const ensureAnnotationsLoaded = useCallback(
@@ -182,6 +213,7 @@ export function PlotPage() {
 
   async function onToggleDataset(datasetId: string, nextVisible: boolean) {
     setError(null)
+    setWarning(null)
     setTraceStates((prev) =>
       prev.map((t) => (t.datasetId === datasetId ? { ...t, visible: nextVisible } : t)),
     )
@@ -275,6 +307,16 @@ export function PlotPage() {
           x = s.x
         }
 
+        if (s.reference?.data_type === 'LineList') {
+          return {
+            type: 'bar',
+            name: displayName,
+            x,
+            y: s.y,
+            hovertemplate: `${displayName}<br>x=%{x} ${xUnit}<br>strength=%{y}<extra></extra>`,
+          }
+        }
+
         // Use Plotly defaults for colors; we only provide a stable dash style for differentiation.
         const dash = dashStyles[idx % dashStyles.length]
         return {
@@ -292,11 +334,17 @@ export function PlotPage() {
       .filter((t) => t.visible)
       .map((t, idx) => {
         const dash = dashStyles[(idx + traces.length) % dashStyles.length]
+        let x = t.x
+        try {
+          x = convertXFromCanonical(t.x, t.x_unit, displayXUnit).x
+        } catch {
+          x = t.x
+        }
         return {
           type: 'scatter',
           mode: 'lines',
           name: t.name,
-          x: t.x,
+          x,
           y: t.y,
           line: { dash },
           hovertemplate: `${t.name}<br>x=%{x} ${xUnit}<br>y=%{y} ${formatUnit(t.y_unit)}<extra></extra>`,
@@ -427,10 +475,6 @@ export function PlotPage() {
 
     setError(null)
     try {
-      for (const datasetId of selectedTransformDatasetIds) {
-        await ensureSeriesLoaded(datasetId)
-      }
-
       const createdAt = nowIso()
       const createdBy = 'local/anonymous'
 
@@ -451,8 +495,7 @@ export function PlotPage() {
       const next: DerivedTrace[] = []
 
       for (const datasetId of selectedTransformDatasetIds) {
-        const s = seriesById[datasetId]
-        if (!s) continue
+        const s = await ensureSeriesLoaded(datasetId)
         const meta = datasetsById.get(datasetId)
         const baseName = meta?.name ?? datasetId
 
@@ -464,9 +507,8 @@ export function PlotPage() {
           | { type: 'smooth'; parameters: Record<string, unknown> }
         > = []
 
-        // View-level unit conversion is handled at render-time from canonical for Originals.
-        // For Derived traces, we stamp the display X array at creation time.
-        x = convertXFromCanonical(s.x, s.x_unit, displayXUnit).x
+        // CAP-05: data-level transforms must not change X; unit conversions are view-level.
+        x = s.x
 
         const prefixes: string[] = []
 
@@ -660,6 +702,170 @@ export function PlotPage() {
     }
   }
 
+  const differentialOptions = useMemo(() => {
+    const originals = datasets.map((d) => ({ key: `o:${d.id}`, label: `Original: ${d.name || d.id}` }))
+    const derived = derivedTraces.map((t) => ({ key: `d:${t.traceId}`, label: `Derived: ${t.name}` }))
+    return [...originals, ...derived]
+  }, [datasets, derivedTraces])
+
+  function displayTraceName(key: string): string {
+    if (key.startsWith('o:')) {
+      const id = key.slice(2)
+      return datasetsById.get(id)?.name ?? id
+    }
+    if (key.startsWith('d:')) {
+      const id = key.slice(2)
+      return derivedTraces.find((d) => d.traceId === id)?.name ?? id
+    }
+    return key
+  }
+
+  async function resolveTraceAsync(
+    key: string,
+  ): Promise<{ id: string; name: string; x: number[]; y: number[]; x_unit: string | null; y_unit: string | null }> {
+    if (key.startsWith('o:')) {
+      const id = key.slice(2)
+      const s = await ensureSeriesLoaded(id)
+      const name = datasetsById.get(id)?.name ?? id
+      return { id, name, x: s.x, y: s.y, x_unit: s.x_unit, y_unit: s.y_unit }
+    }
+    if (key.startsWith('d:')) {
+      const id = key.slice(2)
+      const t = derivedTraces.find((d) => d.traceId === id)
+      if (!t) throw new Error('Derived trace not found.')
+      return { id: t.traceId, name: t.name, x: t.x, y: t.y, x_unit: t.x_unit, y_unit: t.y_unit }
+    }
+    throw new Error('Unknown trace key.')
+  }
+
+  async function onSwapDiff() {
+    setWarning(null)
+    setError(null)
+    setDiffA(diffB)
+    setDiffB(diffA)
+  }
+
+  async function onComputeDifferential() {
+    setError(null)
+    setWarning(null)
+
+    try {
+      if (!diffA || !diffB) return
+
+      const a = await resolveTraceAsync(diffA)
+      const b = await resolveTraceAsync(diffB)
+
+      const aSeries = diffA.startsWith('o:') ? seriesById[diffA.slice(2)] : null
+      const bSeries = diffB.startsWith('o:') ? seriesById[diffB.slice(2)] : null
+      if (aSeries?.reference?.data_type === 'LineList' || bSeries?.reference?.data_type === 'LineList') {
+        throw new Error('Line lists cannot be used for A−B or A/B. Select spectrum traces instead.')
+      }
+
+      const ax = normalizeXUnit(a.x_unit)
+      const bx = normalizeXUnit(b.x_unit)
+      if (!ax || !bx) {
+        throw new Error('Trace A and/or B has unknown X units. Fix dataset metadata before comparing.')
+      }
+      if (ax !== bx) {
+        throw new Error(
+          'Trace A and Trace B use different X units/dimensions. Convert display units or fix dataset metadata.',
+        )
+      }
+
+      if (a.y_unit && b.y_unit && a.y_unit !== b.y_unit) {
+        setWarning('Y units differ between A and B; comparison proceeds without unit harmonization.')
+      }
+
+      const alignment = {
+        method: diffAlignmentEnabled ? diffAlignmentMethod : 'none',
+        target: diffTargetGrid,
+      } as const
+
+      const tau = diffTau.trim() === '' ? null : Number(diffTau)
+      if (tau != null && !Number.isFinite(tau)) throw new Error('τ must be numeric.')
+
+      const out = differentialCompare(
+        { x: a.x, y: a.y },
+        { x: b.x, y: b.y },
+        diffOp,
+        alignment,
+        { handling: diffRatioHandling, tau },
+      )
+
+      const createdAt = nowIso()
+      const createdBy = 'local/anonymous'
+
+      const isInterpolated = out.interpolated
+      const interpolatedBadge = isInterpolated ? ' (Interpolated)' : ''
+      const derivedId = makeId('derived')
+
+      const aAlias = a.name
+      const bAlias = b.name
+      const opLabel = diffOp === 'A-B' ? 'A-B' : 'A/B'
+
+      const provenance: TransformRecord[] = []
+      if (diffAlignmentEnabled) {
+        provenance.push({
+          transform_id: makeId('tf'),
+          parent_trace_id: a.id,
+          transform_type: 'resample',
+          parameters: {
+            method: diffAlignmentMethod,
+            target_grid: diffTargetGrid,
+            overlap_only: true,
+            overlap: out.overlap,
+          },
+          created_at: createdAt,
+          created_by: createdBy,
+          output_trace_id: derivedId,
+        })
+      }
+
+      provenance.push({
+        transform_id: makeId('tf'),
+        parent_trace_id: a.id,
+        transform_type: 'differential',
+        parameters: {
+          op: diffOp,
+          a: { id: a.id, name: a.name },
+          b: { id: b.id, name: b.name },
+          alignment,
+          ratio: { handling: diffRatioHandling, tau_used: out.ratioMask?.tau ?? null, masked: out.ratioMask?.maskedCount ?? 0 },
+        },
+        created_at: createdAt,
+        created_by: createdBy,
+        output_trace_id: derivedId,
+      })
+
+      if (out.warnings.length) {
+        setWarning(out.warnings.join(' '))
+      }
+
+      // Choose parent dataset as the selected target grid's original dataset if possible.
+      const parentDatasetId = diffTargetGrid === 'A'
+        ? (diffA.startsWith('o:') ? diffA.slice(2) : (diffB.startsWith('o:') ? diffB.slice(2) : newAnnotationDatasetId || ''))
+        : (diffB.startsWith('o:') ? diffB.slice(2) : (diffA.startsWith('o:') ? diffA.slice(2) : newAnnotationDatasetId || ''))
+
+      setDerivedTraces((prev) => [
+        ...prev,
+        {
+          traceId: derivedId,
+          parentDatasetId: parentDatasetId || (diffA.startsWith('o:') ? diffA.slice(2) : ''),
+          name: `${opLabel}${interpolatedBadge}: ${aAlias} vs ${bAlias}`,
+          x: out.x,
+          y: out.y,
+          x_unit: a.x_unit,
+          y_unit: null,
+          visible: true,
+          provenance,
+          trust: { interpolated: isInterpolated },
+        },
+      ])
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }
+
   const filteredTraceRows = useMemo(() => {
     const q = filter.trim().toLowerCase()
     const rows = traceStates
@@ -705,6 +911,7 @@ export function PlotPage() {
             <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Traces</div>
             {busy ? <p>Loading datasets…</p> : null}
             {error ? <p style={{ color: 'crimson' }}>{error}</p> : null}
+            {warning ? <p>{warning}</p> : null}
 
             {filteredTraceRows.length ? (
               <div style={{ display: 'grid', gap: '0.25rem' }}>
@@ -920,6 +1127,134 @@ export function PlotPage() {
               <button type="button" onClick={onSaveDerivedToLibrary} disabled={!derivedTraces.length} style={{ cursor: 'pointer' }}>
                 Save derived to Library
               </button>
+            </div>
+
+            <div style={{ marginTop: '0.75rem', borderTop: '1px solid #e5e7eb', paddingTop: '0.75rem' }}>
+              <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Differential (CAP-06)</div>
+
+              <div style={{ display: 'grid', gap: '0.5rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Trace A</label>
+                  <select
+                    aria-label="Trace A"
+                    value={diffA}
+                    onChange={(e) => !diffLockA && setDiffA(e.target.value)}
+                    disabled={diffLockA}
+                    style={{ width: '100%' }}
+                  >
+                    <option value="">(select)</option>
+                    {differentialOptions.map((o) => (
+                      <option key={o.key} value={o.key}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.25rem' }}>
+                    <input type="checkbox" checked={diffLockA} onChange={(e) => setDiffLockA(e.target.checked)} />
+                    Lock A
+                  </label>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Trace B</label>
+                  <select
+                    aria-label="Trace B"
+                    value={diffB}
+                    onChange={(e) => !diffLockB && setDiffB(e.target.value)}
+                    disabled={diffLockB}
+                    style={{ width: '100%' }}
+                  >
+                    <option value="">(select)</option>
+                    {differentialOptions.map((o) => (
+                      <option key={o.key} value={o.key}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.25rem' }}>
+                    <input type="checkbox" checked={diffLockB} onChange={(e) => setDiffLockB(e.target.checked)} />
+                    Lock B
+                  </label>
+                </div>
+
+                <button type="button" onClick={onSwapDiff} style={{ cursor: 'pointer' }}>
+                  Swap A ↔ B
+                </button>
+
+                <div>
+                  <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Operation</label>
+                  <select aria-label="Differential operation" value={diffOp} onChange={(e) => setDiffOp(e.target.value as DifferentialOp)} style={{ width: '100%' }}>
+                    <option value="A-B">A−B</option>
+                    <option value="A/B">A/B</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                    <input
+                      type="checkbox"
+                      checked={diffAlignmentEnabled}
+                      onChange={(e) => setDiffAlignmentEnabled(e.target.checked)}
+                    />
+                    Enable alignment (interpolation)
+                  </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginTop: '0.5rem' }}>
+                    <select
+                      aria-label="Alignment method"
+                      value={diffAlignmentMethod}
+                      onChange={(e) => setDiffAlignmentMethod(e.target.value as AlignmentMethod)}
+                      disabled={!diffAlignmentEnabled}
+                    >
+                      <option value="nearest">Nearest</option>
+                      <option value="linear">Linear</option>
+                      <option value="pchip">PCHIP</option>
+                    </select>
+                    <select
+                      aria-label="Target grid"
+                      value={diffTargetGrid}
+                      onChange={(e) => setDiffTargetGrid(e.target.value as 'A' | 'B')}
+                      disabled={!diffAlignmentEnabled}
+                    >
+                      <option value="A">Use A grid</option>
+                      <option value="B">Use B grid</option>
+                    </select>
+                  </div>
+                </div>
+
+                {diffOp === 'A/B' ? (
+                  <div>
+                    <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Ratio handling</label>
+                    <select
+                      aria-label="Ratio handling"
+                      value={diffRatioHandling}
+                      onChange={(e) => setDiffRatioHandling(e.target.value as RatioHandling)}
+                      style={{ width: '100%' }}
+                    >
+                      <option value="mask">Mask near-zero denominator</option>
+                    </select>
+                    <input
+                      aria-label="Denominator threshold"
+                      placeholder="τ (optional)"
+                      value={diffTau}
+                      onChange={(e) => setDiffTau(e.target.value)}
+                      style={{ width: '100%', marginTop: '0.5rem' }}
+                    />
+                  </div>
+                ) : null}
+
+                <div style={{ fontSize: '0.9rem' }}>
+                  <div>
+                    A: <strong>{diffA ? displayTraceName(diffA) : '(none)'}</strong>
+                  </div>
+                  <div>
+                    B: <strong>{diffB ? displayTraceName(diffB) : '(none)'}</strong>
+                  </div>
+                </div>
+
+                <button type="button" onClick={onComputeDifferential} disabled={!diffA || !diffB} style={{ cursor: 'pointer' }}>
+                  Compute
+                </button>
+              </div>
             </div>
           </div>
 

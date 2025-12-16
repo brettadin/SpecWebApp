@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { convertXFromCanonical, normalizeY, savitzkyGolaySmooth } from './transforms'
+import { convertXFromCanonical, differentialCompare, normalizeY, savitzkyGolaySmooth } from './transforms'
 
 describe('CAP-05 transforms', () => {
   it('converts nm <-> cm⁻¹ without cumulative drift (canonical baseline)', () => {
@@ -35,5 +35,47 @@ describe('CAP-05 transforms', () => {
 
     const smoothed = savitzkyGolaySmooth(y, { windowLength: 5, polyorder: 2 })
     expect(smoothed).toHaveLength(y.length)
+  })
+})
+
+describe('CAP-06 differential comparison', () => {
+  it('computes A-B on identical grids', () => {
+    const x = [1, 2, 3]
+    const a = { x, y: [10, 20, 30] }
+    const b = { x, y: [1, 2, 3] }
+    const out = differentialCompare(a, b, 'A-B', { method: 'none', target: 'A' }, { handling: 'mask', tau: null })
+    expect(out.y).toEqual([9, 18, 27])
+    expect(out.interpolated).toBe(false)
+  })
+
+  it('refuses mismatched grids when alignment is off', () => {
+    const a = { x: [1, 2, 3], y: [10, 20, 30] }
+    const b = { x: [1, 2.5, 3], y: [1, 2, 3] }
+    expect(() =>
+      differentialCompare(a, b, 'A-B', { method: 'none', target: 'A' }, { handling: 'mask', tau: null }),
+    ).toThrow()
+  })
+
+  it('computes A/B with masking near zero', () => {
+    const x = [1, 2, 3]
+    const a = { x, y: [10, 20, 30] }
+    const b = { x, y: [1, 0, 3] }
+    const out = differentialCompare(a, b, 'A/B', { method: 'none', target: 'A' }, { handling: 'mask', tau: 0.5 })
+    expect(Number.isFinite(out.y[0])).toBe(true)
+    expect(Number.isNaN(out.y[1])).toBe(true)
+    expect(out.y[2]).toBeCloseTo(10)
+  })
+
+  it('computes with linear alignment on overlap only', () => {
+    const a = { x: [1, 2, 3, 4], y: [10, 20, 30, 40] }
+    const b = { x: [2, 3, 4, 5], y: [2, 3, 4, 5] }
+    const out = differentialCompare(a, b, 'A-B', { method: 'linear', target: 'A' }, { handling: 'mask', tau: null })
+    expect(out.interpolated).toBe(true)
+    // Outside overlap (x=1) should be NaN
+    expect(Number.isNaN(out.y[0])).toBe(true)
+    // Within overlap at x=2,3,4 should be finite
+    expect(Number.isFinite(out.y[1])).toBe(true)
+    expect(Number.isFinite(out.y[2])).toBe(true)
+    expect(Number.isFinite(out.y[3])).toBe(true)
   })
 })

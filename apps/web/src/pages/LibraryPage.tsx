@@ -44,6 +44,8 @@ type IngestCommitResponse = {
 export function LibraryPage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [refBusy, setRefBusy] = useState(false)
+  const [refError, setRefError] = useState<string | null>(null)
   const [preview, setPreview] = useState<IngestPreviewResponse | null>(null)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [xIndex, setXIndex] = useState<number | ''>('')
@@ -52,6 +54,19 @@ export function LibraryPage() {
   const [yUnit, setYUnit] = useState('')
   const [datasets, setDatasets] = useState<DatasetSummary[]>([])
   const [commitResult, setCommitResult] = useState<IngestCommitResponse | null>(null)
+
+  const [refUrl, setRefUrl] = useState('')
+  const [refTitle, setRefTitle] = useState('')
+  const [refSourceName, setRefSourceName] = useState('NIST Chemistry WebBook')
+  const [refCitation, setRefCitation] = useState('')
+  const [refRedistributionAllowed, setRefRedistributionAllowed] = useState<'unknown' | 'yes' | 'no'>('unknown')
+
+  const [lineUrl, setLineUrl] = useState('')
+  const [lineTitle, setLineTitle] = useState('')
+  const [lineSourceName, setLineSourceName] = useState('NIST ASD')
+  const [lineCitation, setLineCitation] = useState('')
+  const [lineXUnit, setLineXUnit] = useState('nm')
+  const [lineDelimiter, setLineDelimiter] = useState(',')
 
   async function refreshDatasets() {
     const res = await fetch('http://localhost:8000/datasets')
@@ -155,6 +170,99 @@ export function LibraryPage() {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
       setBusy(false)
+    }
+  }
+
+  async function onImportReference() {
+    setRefError(null)
+
+    const url = refUrl.trim()
+    if (!url) return
+    if (!refTitle.trim()) {
+      setRefError('Title is required for reference imports.')
+      return
+    }
+    if (!refCitation.trim()) {
+      setRefError('Citation text is required (CAP-07 citation-first).')
+      return
+    }
+
+    setRefBusy(true)
+    try {
+      const res = await fetch('http://localhost:8000/references/import/jcamp-dx', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: refTitle.trim(),
+          source_name: refSourceName.trim() || 'Unknown',
+          source_url: url,
+          citation_text: refCitation.trim(),
+          trust_tier: 'Primary/Authoritative',
+          license: { redistribution_allowed: refRedistributionAllowed },
+          query: { entered_url: url },
+        }),
+      })
+      if (!res.ok) {
+        const text = await res.text()
+        throw new Error(text || `HTTP ${res.status}`)
+      }
+      await refreshDatasets()
+      setRefUrl('')
+      setRefTitle('')
+      setRefCitation('')
+    } catch (e) {
+      setRefError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setRefBusy(false)
+    }
+  }
+
+  async function onImportLineList() {
+    setRefError(null)
+
+    const url = lineUrl.trim()
+    if (!url) return
+    if (!lineTitle.trim()) {
+      setRefError('Title is required for line list imports.')
+      return
+    }
+    if (!lineCitation.trim()) {
+      setRefError('Citation text is required (CAP-07 citation-first).')
+      return
+    }
+
+    setRefBusy(true)
+    try {
+      const res = await fetch('http://localhost:8000/references/import/line-list-csv', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: lineTitle.trim(),
+          source_name: lineSourceName.trim() || 'Unknown',
+          source_url: url,
+          citation_text: lineCitation.trim(),
+          trust_tier: 'Primary/Authoritative',
+          x_unit: lineXUnit.trim() || null,
+          delimiter: lineDelimiter,
+          has_header: true,
+          x_index: 0,
+          strength_index: 1,
+          license: { redistribution_allowed: refRedistributionAllowed },
+          query: { entered_url: url },
+        }),
+      })
+      if (!res.ok) {
+        const text = await res.text()
+        throw new Error(text || `HTTP ${res.status}`)
+      }
+      await refreshDatasets()
+      setLineUrl('')
+      setLineTitle('')
+      setLineCitation('')
+    } catch (e) {
+      setRefError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setRefBusy(false)
     }
   }
 
@@ -304,6 +412,174 @@ export function LibraryPage() {
           </div>
         </div>
       ) : null}
+
+      <div style={{ marginTop: '1.25rem', borderTop: '1px solid #e5e7eb', paddingTop: '1rem' }}>
+        <h2 style={{ fontSize: '1rem' }}>Add reference data (CAP-07)</h2>
+        <p style={{ marginTop: '0.25rem' }}>
+          Import a reference spectrum by URL (server fetch + parse). Citation text is required.
+        </p>
+
+        {refError ? (
+          <div style={{ border: '1px solid #e5e7eb', padding: '0.5rem', marginTop: '0.5rem' }}>
+            <p style={{ color: 'crimson', margin: 0 }}>{refError}</p>
+          </div>
+        ) : null}
+
+        <div style={{ display: 'grid', gap: '0.5rem', maxWidth: 720 }}>
+          <label>
+            <div style={{ marginBottom: '0.25rem' }}>JCAMP-DX URL</div>
+            <input
+              aria-label="Reference URL"
+              value={refUrl}
+              onChange={(e) => setRefUrl(e.target.value)}
+              placeholder="https://.../spectrum.jdx"
+              style={{ width: '100%' }}
+              disabled={refBusy}
+            />
+          </label>
+
+          <label>
+            <div style={{ marginBottom: '0.25rem' }}>Title</div>
+            <input
+              aria-label="Reference title"
+              value={refTitle}
+              onChange={(e) => setRefTitle(e.target.value)}
+              placeholder="e.g., NIST WebBook IR: CO2"
+              style={{ width: '100%' }}
+              disabled={refBusy}
+            />
+          </label>
+
+          <label>
+            <div style={{ marginBottom: '0.25rem' }}>Source name</div>
+            <input
+              aria-label="Reference source name"
+              value={refSourceName}
+              onChange={(e) => setRefSourceName(e.target.value)}
+              placeholder="e.g., NIST Chemistry WebBook"
+              style={{ width: '100%' }}
+              disabled={refBusy}
+            />
+          </label>
+
+          <label>
+            <div style={{ marginBottom: '0.25rem' }}>Citation text</div>
+            <input
+              aria-label="Reference citation"
+              value={refCitation}
+              onChange={(e) => setRefCitation(e.target.value)}
+              placeholder="Required (CAP-07): human-readable citation"
+              style={{ width: '100%' }}
+              disabled={refBusy}
+            />
+          </label>
+
+          <label>
+            <div style={{ marginBottom: '0.25rem' }}>Redistribution allowed</div>
+            <select
+              aria-label="Reference redistribution"
+              value={refRedistributionAllowed}
+              onChange={(e) => setRefRedistributionAllowed(e.target.value as 'unknown' | 'yes' | 'no')}
+              disabled={refBusy}
+            >
+              <option value="unknown">Unknown (default restrictive)</option>
+              <option value="no">No</option>
+              <option value="yes">Yes</option>
+            </select>
+          </label>
+
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <button type="button" onClick={onImportReference} disabled={refBusy}>
+              {refBusy ? 'Importing…' : 'Import reference'}
+            </button>
+            <button type="button" onClick={refreshDatasets} disabled={refBusy}>
+              Refresh list
+            </button>
+          </div>
+
+          <div style={{ marginTop: '0.75rem', borderTop: '1px solid #e5e7eb', paddingTop: '0.75rem' }}>
+            <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Line list (CSV URL)</div>
+
+            <label>
+              <div style={{ marginBottom: '0.25rem' }}>CSV URL</div>
+              <input
+                aria-label="Line list URL"
+                value={lineUrl}
+                onChange={(e) => setLineUrl(e.target.value)}
+                placeholder="https://.../lines.csv"
+                style={{ width: '100%' }}
+                disabled={refBusy}
+              />
+            </label>
+
+            <label>
+              <div style={{ marginBottom: '0.25rem' }}>Title</div>
+              <input
+                aria-label="Line list title"
+                value={lineTitle}
+                onChange={(e) => setLineTitle(e.target.value)}
+                placeholder="e.g., NIST ASD Lines: Fe II"
+                style={{ width: '100%' }}
+                disabled={refBusy}
+              />
+            </label>
+
+            <label>
+              <div style={{ marginBottom: '0.25rem' }}>Source name</div>
+              <input
+                aria-label="Line list source name"
+                value={lineSourceName}
+                onChange={(e) => setLineSourceName(e.target.value)}
+                style={{ width: '100%' }}
+                disabled={refBusy}
+              />
+            </label>
+
+            <label>
+              <div style={{ marginBottom: '0.25rem' }}>Citation text</div>
+              <input
+                aria-label="Line list citation"
+                value={lineCitation}
+                onChange={(e) => setLineCitation(e.target.value)}
+                placeholder="Required (CAP-07): human-readable citation"
+                style={{ width: '100%' }}
+                disabled={refBusy}
+              />
+            </label>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+              <label>
+                <div style={{ marginBottom: '0.25rem' }}>X unit</div>
+                <input
+                  aria-label="Line list x unit"
+                  value={lineXUnit}
+                  onChange={(e) => setLineXUnit(e.target.value)}
+                  style={{ width: '100%' }}
+                  disabled={refBusy}
+                />
+              </label>
+              <label>
+                <div style={{ marginBottom: '0.25rem' }}>Delimiter</div>
+                <select
+                  aria-label="Line list delimiter"
+                  value={lineDelimiter}
+                  onChange={(e) => setLineDelimiter(e.target.value)}
+                  disabled={refBusy}
+                >
+                  <option value=",">Comma</option>
+                  <option value="\t">Tab</option>
+                </select>
+              </label>
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
+              <button type="button" onClick={onImportLineList} disabled={refBusy}>
+                {refBusy ? 'Importing…' : 'Import line list'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
 
       {commitResult ? (
         <div style={{ marginTop: '1rem' }}>
