@@ -1,0 +1,207 @@
+1 1) The one-liner
+Fill in the blank:
+· This app helps me compare lab based spectroscopic recordings to reference sources and telescopic data regarding exoplanet atmospheric compositions.
+2 2) What you actually want to do in the app (pick + add)
+Check anything you want:
+· Upload my own local spectra files
+	· Upload my own files that contain spectroscopic data regarding my recordings. Or data from other sources which I have obtained the file from. 
+	· Save those files in a place that I can access without reuploading.
+	· Share that file with others. 
+	· Maintain uploaded information regarding who uploaded it, when, what it is, how they did it, what they’re looking at, why they’re doing it, and any other note. 
+	· In the instance(s) that the file I choose to upload is not my own, I wish to again display all information regarding the file and data set. Like: where did we get it from (sourced)? Who is it from? What is it? How did they get it? What are they looking at?
+· Graph one or more spectra data set
+	· I am referring to spectroscopic Data that is uploaded to the program, downloaded from other users on their site, pulled from sample data, retrieved from online databases, and any other source of data. 
+	· This includes but is not limited to, uvvis and ir spectroscopy. 
+	· Have each set of data be distinguishable when visual represented. With accurate legend names that reflect what the data set is, while maintaining readability and logic.
+	· Look at fine details in data sets visually. And have data point values represented in tooltips. 
+	· Make notes at ranges/values and save them. Uploaded files should also have notes. Notes should be togglable and editable.
+· Compare lab spectra to reference/library spectra
+	· Directly compare data in our library to reference data
+	· Reference data should be directly sourced from online databases with reputable citations and links
+	· All information regarding reference data should be represented and used as needed. This includes things like instruments used, phase of analyte, ranges, resolution, conditions, data, etc. all of this should be represented when we look at the data set. 
+	· Use known tools, libraries, languages, etc for retrieving this information. Do not start making something new without looking to see if some else has already made something for that. 
+· Compare lab spectra to telescope/space data
+	· Use known tools, libraries, languages, etc for retrieving this information. Do not start making something new without looking to see if some else has already made something for that. 
+· Normalize / scale so curves are comparable
+	· There should be no normalization of data when we import it. Normalization should only happen when we select it in the user interface.
+	· Normalization should only occur for the Y axis. The X axis is designated for wavelength and wavenumber values, so normalizing this would skew data and this is unwanted.
+· Do A−B subtraction
+	· We should be able to select sets of data and choose which one is A and which is B. and have the names labeled in the UI when we’re doing this. And we should be able to swap which is a and which is b by the touch of a swap button. 
+· Do A/B ratio
+	· We should be able to select sets of data and choose which one is A and which is B. and have the names labeled in the UI when we’re doing this. And we should be able to swap which is a and which is b by the touch of a swap button. 
+· Label peaks / dips and Identify likely compounds/elements from matches
+	· We should be able to write notes at (x,y) and have it appear as a tooltip when we hover it, or when we toggle it on. These labels should be saved in such a way that they can be edited, and shared when accessing the data set. 
+	· We should also be able to select regions to highlight/label. This should be treated the same way as the notes, but this is mostly to highlight x ranges so we can write about them, or make notes about them. This will also be applied in a similar way for functional group ir data, and comparisons in uvvis. Ie, we upload a sample of methane, and we know it has ranges at x1-x2, x3-4, x5-6 and so on. I want to be able to highlight those ranges and make notes about them. 
+	· This will be especially useful when we are using referenced data, and we know what features are responsible for peaks/dips at specific ranges. A way to determine this and label them based on referenced identification of those features would be ideal. 
+	· I want to get a wide range of reference data from credible sources, not synthesized data. This includes but is not limited to spectral lines regarding elements (and tooltips for what is responsible for that line). And also (as mentioned previously) labels for ranges of known compounds, elements, or functional groups. 
+· Export clean plots + data + “what I did” summary
+· Keep a session history / notebook
+	· User based sessions history / notes /notebook
+	· Ability to have user join a group (or a class) to share results in.
+	· Site wide sharing/uploading. I.e. public viewing for uploaded files. Or private/restricted to group/sharing.  
+3 3) Your “normal session” (short story)
+In 3–6 sentences, what does a good session look like?
+	· Start: Upload data set / retrieve other data sets for analysis.
+	· Middle: Overlay reference data sources / zoom in on features 
+	· End: Identify features as characteristics of element/compound/molecule etc. Make note of findings, save, and share
+4 5) The data you work with (no technical jargon needed)
+File types you use most (top 3)
+	· CSV
+	· TXT
+	· FITS
+	· JCAMP-DX
+	· Other: img, jpg, db, dat, and any other which may be used by telescope sources
+Where the data comes from (pick + add)
+	· My lab instrument output
+	· Class datasets
+		o This can be organized later on to show class project data. So like if we set up a way to label it by class or something then everyone who uses it in that class can save and reference data from the rest of the class.
+	· NIST / reference databases
+		o There are other sources and many have tools or libraries for accessing their data 
+	· Telescope archives (JWST/HST/MAST/etc.)
+	· All of which need to be handled in their own ways, and will have different search parameters, and file types to display. Much attention and care must be used here to ensure we successfully pull data from all these sources, filter by them, filter by their results, and display data. We should ensure we do not include data that is not relevant to our studies. And file types that are not used. But some sources do use separate files for storing meta data. This should be looked out for. 
+	· We should make sure we can search stars and planets easily. Wording and naming get a little messy here, so we should find a way to work this out.
+	· If possible, we should be able to search by telescope / measurement ranges. And look at any data from that telescope across any database.
+· Referenceable papers / supplementary info / citable textbooks / databases
+The most common “messy file” problems you see
+Check any that happen to you:
+	· Extra header lines / notes at the top
+	· Missing units or units aren’t neat and easy to read
+	· Wrong column order
+	· Weird delimiters
+	· Duplicate filenames / repeated scans
+	· Data gaps / missing regions
+	· Axis backwards sometimes
+	· Multiple data sets in one file
+	· Many columns that are not easy to differentiate between
+	· Other: Files are not actually readable, and need to be opened using specific resources.
+When a file is messy, what should the app do?
+	· Try its best automatically
+	· Ask me a couple quick questions and then proceed
+		o If needed, bring up a sample view of the file in the UI then ask the user to clarify which columns to use. Then it should fill in from there.
+		o In the case of it needed extra information, it should still be able to read the headers to learn info, if not then ask the user to input a few data points to add for reference. Save that input, and add it to the data file. Then get the data file in a way that can be read again. 
+	· Refuse and explain exactly what to fix
+		o If it cant be read, give directions on what to do, how to do it, possible fixes, or sources that could be useful for alternatives.
+5 6) Comparison features you care about
+When you overlay spectra, what matters most?
+	· Matching peaks/dips
+		o Height and width at areas of peaks to determine concentration.
+	· Matching overall shape
+		o Height and width of peaks/dips shape to see if multiple compounds are responsible for the shape
+	· Matching band positions even if intensities differ
+	· Seeing small differences clearly
+	· Handling different resolutions/ranges without pain
+		o WITHOUT INJECTING NOISE OR FAKE DATA. 
+	· Fast performance with big files
+		o And the ability to correctly read/understand information in a wide variety of files/data types.
+	· Other: 
+		o Seeing what compounds/elements are responsible for a feature on our graph. And if so, what is going on with that compound? Is it bending, stretching, emitting? something else? 
+For A−B and A/B, what do you want the app to do?
+	· A−B should be used for: Subtracting data set B from data set A. 
+	· A/B should be used for: Dividing data set A by data set B
+	· If it produces nonsense (like huge spikes), I want: To figure this out later and not break out code ahead of time. 
+6 7) Keeping things organized (so it doesn’t get messy)
+When you load a bunch of spectra, what helps you stay sane?
+How should spectra be organized?
+	· Grouped by source (Telescope / Database/ Reference / Lab / Other)
+	· Tags that are searchable and filterable (e.g., “CO2”, “H2O”, “Jupiter”, “FTIR”, “UV-Vis”)
+		o Auto tagging for  derived  - Grouped by “Original” vs “Derived” (A−B, A/B, etc.)
+		o Auto tagging when adding spectral lines/reference data sets. Ie if we tag co2 or Jupiter or ch4 or anything we’ve referenced, I want it to tag. 
+	· Folders / collections
+		o For users, groups, and site – wide 
+			§ Just make it clean
+Naming preferences
+	· If I load multiple files with the same name, I want:
+		o auto-rename (file (2), file (3))
+			§ if I do not answer the questions in the pop up.
+		o ask me what to do
+			§ Give me a popup window:
+			§ Options are:
+					§ Replace?
+					§ Rename new file?
+					§ Rename old file?
+		o block duplicates unless I confirm
+Finding things quickly
+What would you use?
+	· Search bar (type a filename / tag / element / name of planet, star, etc / compound / classroom / user / file type )
+	· Filters (source, range, date, type, tags, instrument)
+	· Sort (name, date, wavelength range, size, tags, instrument)
+	· Favorite trace/data source/reference
+Derived traces (A−B, A/B, etc.)
+	· Should derived traces be:
+		o temporary unless I “save/keep” them
+	· If derived traces pile up, I want a button to:
+		o clear all derived
+		o clear only the last one
+		o archive them alongside file data, separate so they can be read as well.
+7 8) UI feel (simple choices)
+	· Clean lab notebook that can be saved and shared with the file
+	· Instrument control panel – pick what instrument to search for, search for more than one if needed. Or search for observation range / type. The type should be predefined. As should the instrument/telescope. This should include many options, and should be able to correctly search for the desired target.
+	· Minimal + fast – but loaded with features that are easily accessible and easy to use / understand
+	· Fancy + visual – sleek and clean ui, mostly darker colors for UI elements and thematic splashes of colors for some elements. Nothing too gaudy – annoying to look at. Simple, but striking. Like.. for instance. Utilize the color spectrum. But do it very low key. On buttons or ui elements, if they have a dark background, add in a colored underline on their button or title or something to make it pop. Nothing too crazy. 
+	· Other: Different themes. IE the normal mode with the normal fancy mode, a dark mode with less of the bright features, and a light mode that changes the ui to ligher colors. 
+What UI stuff annoys you most?
+	· Too many buttons that do the same function. 
+	· Too few controls / can’t do what I want without diving through menus of annoying stuff
+	· Things reset when I change something, or get really cluttered / hard to find
+	· Labels/legend become unreadable. I liked being able to move the label on our graph before but I really don’t like it now. I have to change where it is for every data set. And sometimes it gets to be way too large. 
+	· Plot looks cluttered
+		○ Maybe we could find a way to organize data sets by groups too?? Like. Lets say we have a few water samples. Then we make that into an h2o group of samples. Then we can graph the whole group at once, or toggle individual ones. Then if we upload, lets say co2, we can do the same. And have 2 sets of labeled data for several sets of raw data. This could be useful when doing things like labeling for the legend, or averaging, or A-B or A/B or any other analysis. This should be looked at
+	· Errors aren’t helpful – bad error logging – AI agents not reading error logs properly
+	· Other: too many pop up windows
+	What should never reset while you’re working?
+	· User login
+	· All data sets unless specified
+	· All graphed data unless specified
+	· Idk anything else? Nothing comes to mind until it happens ya know.
+8 9) Exports (what you want to hand someone)
+Imagine you export and send it to a professor/teammate. What must be included so they trust it?
+	· The plot image (with labeled axis and a title)
+	· The plotted data (with labeled axis and a title)
+	· The raw original file(s)
+	· A short “what I did” summary
+	· Source citations / links
+	· App version / date
+	· Notes/comments I wrote
+	· Other:
+What formats do you care about?
+	· PNG
+	· PDF
+	· SVG
+	· CSV
+	· JSON
+9 10) Trust + “don’t lie to me” rules
+Answer in plain language:
+	· What makes you trust the app’s output?
+		o The data ranges make sense.
+		o The results align with what we see in the referenced data when we click on the in app link that supplies us with a direct source of where we got the data
+	· What makes you not trust it?
+		o Weird data ranges
+		o Negative wavelength values
+		o Values that bounce back and forth between x values. For instance x1 = 1, x2 = 2, x3 = 1, x4 = 3, x5= 2, and so on for any other weird values that may occur.
+		o Doesn’t match the referenced material / known material
+ 
+10 11) “Never again” list
+Write any past pain points you do not want repeated:
+AI agents not writing inline comments that are read / referenced by future ai agents
+Ai agents not connecting functions to ui elements/other functions that are needed to actually work
+Ai agents not writing their changes after every prompt. This should be written in the coding repo after every single time they work on something. 
+Ai agents not reading notes written by past agents to read what they did / why they did it. This can be useful for bug fixing, or picking up on work.
+Ai agents making horrible looking UI design. It may seem find in code to a computer, but for a human its pretty awful sometimes.
+Breaking/losing features as we add more
+Duplicating features if we try to move them / rework them
+Unused UI elements that do not function
+Duplicate Ui functions that do different versions of the same job, usually not working.
+Buried functions in UI menus
+ 
+12) Out of scope (things you do NOT want)
+	· No mobile app / site stuff for now. This will be addressed in the future
+	· Timeseries stuff. I do want this one day, but we should focus on spectrum that tell us things about the absorbance / reflectance / emissions / emittance / transmission of the target. 
+ 
+13) One controlled rant box (optional)
+If you need to rant, do it here so it doesn’t bleed everywhere else:
+	• Use known tools, libraries, languages, etc for retrieving this information. Do not start making something new without looking to see if some else has already made something for that. 
+	• Maybe we could find a way to organize data sets by groups too?? Like. Lets say we have a few water samples. Then we make that into an h2o group of samples. Then we can graph the whole group at once, or toggle individual ones. Then if we upload, lets say co2, we can do the same. And have 2 sets of labeled data for several sets of raw data. This could be useful when doing things like labeling for the legend, or averaging, or A-B or A/B or any other analysis. This should be looked at
+	• Show images of planets or molecules or atoms when looking at them
+		○ Show representations of movements in molecules like bending, stretching, vibrating, emitting etc
+	• Periodic table spectral line selector
+		○ Like. It’s the full periodic table displayed as individual boxes, aligned how it should be. Then we click on an element and boom it just loads the spectral lines of that element. 

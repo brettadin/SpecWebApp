@@ -1,0 +1,33 @@
+# Node
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+.vite/
+
+# Python
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Virtualenvs
+.venv/
+**/.venv/
+
+# Env / secrets
+.env
+.env.*
+
+# Local app data (keep repo-first, but don't commit user data)
+data/
+**/data/
+exports/
+**/exports/
+uploads/
+**/uploads/
+
+# OS
+.DS_Store
+Thumbs.db

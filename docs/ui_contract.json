@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "app": "spectra-app",
+  "routes": [
+    {"path": "/library", "label": "Library"},
+    {"path": "/plot", "label": "Plot"},
+    {"path": "/notebook", "label": "Notebook"},
+    {"path": "/docs", "label": "Docs"}
+  ],
+  "requiredNavTestIds": [
+    "nav-library",
+    "nav-plot",
+    "nav-notebook",
+    "nav-docs"
+  ]
+}

@@ -1,0 +1,670 @@
+{
+  "components": {
+    "schemas": {
+      "Body_ingest_commit_ingest_commit_post": {
+        "properties": {
+          "file": {
+            "format": "binary",
+            "title": "File",
+            "type": "string"
+          },
+          "hdu_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hdu Index"
+          },
+          "name": {
+            "default": "",
+            "title": "Name",
+            "type": "string"
+          },
+          "x_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X Index"
+          },
+          "x_unit": {
+            "default": "",
+            "title": "X Unit",
+            "type": "string"
+          },
+          "y_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Y Index"
+          },
+          "y_unit": {
+            "default": "",
+            "title": "Y Unit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_ingest_commit_ingest_commit_post",
+        "type": "object"
+      },
+      "Body_ingest_preview_ingest_preview_post": {
+        "properties": {
+          "file": {
+            "format": "binary",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_ingest_preview_ingest_preview_post",
+        "type": "object"
+      },
+      "ColumnInfo": {
+        "properties": {
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "is_numeric": {
+            "title": "Is Numeric",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "non_numeric_count": {
+            "title": "Non Numeric Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "index",
+          "name",
+          "is_numeric",
+          "non_numeric_count"
+        ],
+        "title": "ColumnInfo",
+        "type": "object"
+      },
+      "DatasetDetail": {
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "source_file_name": {
+            "title": "Source File Name",
+            "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
+          "x_count": {
+            "title": "X Count",
+            "type": "integer"
+          },
+          "x_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X Unit"
+          },
+          "y_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Y Unit"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "created_at",
+          "source_file_name",
+          "sha256",
+          "x_unit",
+          "y_unit",
+          "x_count",
+          "warnings"
+        ],
+        "title": "DatasetDetail",
+        "type": "object"
+      },
+      "DatasetSummary": {
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "source_file_name": {
+            "title": "Source File Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "created_at",
+          "source_file_name",
+          "sha256"
+        ],
+        "title": "DatasetSummary",
+        "type": "object"
+      },
+      "FitsHduCandidate": {
+        "properties": {
+          "columns": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Columns",
+            "type": "array"
+          },
+          "hdu_index": {
+            "title": "Hdu Index",
+            "type": "integer"
+          },
+          "hdu_name": {
+            "title": "Hdu Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "hdu_index",
+          "hdu_name",
+          "columns"
+        ],
+        "title": "FitsHduCandidate",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "IngestCommitResponse": {
+        "properties": {
+          "dataset": {
+            "$ref": "#/components/schemas/DatasetDetail"
+          }
+        },
+        "required": [
+          "dataset"
+        ],
+        "title": "IngestCommitResponse",
+        "type": "object"
+      },
+      "IngestPreviewResponse": {
+        "properties": {
+          "columns": {
+            "items": {
+              "$ref": "#/components/schemas/ColumnInfo"
+            },
+            "title": "Columns",
+            "type": "array"
+          },
+          "delimiter": {
+            "title": "Delimiter",
+            "type": "string"
+          },
+          "encoding": {
+            "title": "Encoding",
+            "type": "string"
+          },
+          "file_name": {
+            "title": "File Name",
+            "type": "string"
+          },
+          "file_size_bytes": {
+            "title": "File Size Bytes",
+            "type": "integer"
+          },
+          "fits_hdu_candidates": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FitsHduCandidate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fits Hdu Candidates"
+          },
+          "has_header": {
+            "title": "Has Header",
+            "type": "boolean"
+          },
+          "hdu_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hdu Index"
+          },
+          "parser": {
+            "title": "Parser",
+            "type": "string"
+          },
+          "preview_rows": {
+            "items": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "title": "Preview Rows",
+            "type": "array"
+          },
+          "suggested_x_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggested X Index"
+          },
+          "suggested_y_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggested Y Index"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
+          "x_unit_hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X Unit Hint"
+          },
+          "y_unit_hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Y Unit Hint"
+          }
+        },
+        "required": [
+          "file_name",
+          "file_size_bytes",
+          "encoding",
+          "parser",
+          "delimiter",
+          "has_header",
+          "hdu_index",
+          "fits_hdu_candidates",
+          "x_unit_hint",
+          "y_unit_hint",
+          "columns",
+          "preview_rows",
+          "suggested_x_index",
+          "suggested_y_index",
+          "warnings"
+        ],
+        "title": "IngestPreviewResponse",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "Spectra App API",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/datasets": {
+      "get": {
+        "operationId": "datasets_list_datasets_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DatasetSummary"
+                  },
+                  "title": "Response Datasets List Datasets Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Datasets List"
+      }
+    },
+    "/datasets/{dataset_id}": {
+      "get": {
+        "operationId": "datasets_get_datasets__dataset_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_id",
+            "required": true,
+            "schema": {
+              "title": "Dataset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Datasets Get"
+      }
+    },
+    "/datasets/{dataset_id}/data": {
+      "get": {
+        "operationId": "datasets_get_data_datasets__dataset_id__data_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_id",
+            "required": true,
+            "schema": {
+              "title": "Dataset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Datasets Get Data Datasets  Dataset Id  Data Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Datasets Get Data"
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Health Health Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health"
+      }
+    },
+    "/ingest/commit": {
+      "post": {
+        "operationId": "ingest_commit_ingest_commit_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_ingest_commit_ingest_commit_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestCommitResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ingest Commit"
+      }
+    },
+    "/ingest/preview": {
+      "post": {
+        "operationId": "ingest_preview_ingest_preview_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "max_rows",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Max Rows",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "hdu_index",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Hdu Index"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_ingest_preview_ingest_preview_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestPreviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ingest Preview"
+      }
+    }
+  }
+}

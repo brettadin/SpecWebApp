@@ -1,0 +1,12 @@
+{
+  "name": "@spectra/api-client",
+  "private": true,
+  "version": "0.1.0",
+  "types": "./src/generated/schema.d.ts",
+  "scripts": {
+    "gen": "openapi-typescript ./openapi.json -o ./src/generated/schema.d.ts"
+  },
+  "devDependencies": {
+    "openapi-typescript": "^7.7.0"
+  }
+}

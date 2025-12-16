@@ -1,0 +1,16 @@
+# Normalize text files
+t* text=auto
+
+# Force LF for code/config by default
+*.ts  text eol=lf
+*.tsx text eol=lf
+*.js  text eol=lf
+*.jsx text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.md text eol=lf
+*.py text eol=lf
+
+# PowerShell scripts are usually CRLF on Windows
+*.ps1 text eol=crlf

@@ -1,0 +1,82 @@
+Spectra App — Development Cycle Overview
+Reference-driven plan aligned to your Refined Spec Brain Dump (Canvas)
+Date: December 15, 2025
+
+1. Executive overview
+Purpose: keep the project on track by using a written, repeatable development cycle and a spec-per-capability document set. The Brain Dump canvas is the living source-of-truth for goals and feature intent; this document defines how we translate that intent into buildable, verifiable work.
+Core product intent (from your Brain Dump):
+•	Compare lab-based spectra to credible reference databases and telescope/space archives, with enough context to justify interpretations.
+•	Make comparisons readable and trustworthy (clear legends, tooltips, notes, sane ranges; avoid fabricated/noisy data injection).
+•	Support annotation (point notes and range highlights), differential operations (A−B, A/B), and provenance-rich export/sharing.
+•	Prevent regressions via documentation, wiring discipline, and verification checks (your “never again” list).
+
+2. Guiding principles (non-negotiables)
+•	No silent data distortion: no normalization on ingest; no X-axis normalization; no hidden re-sorting or resampling that invents signal.
+•	Provenance-first: every dataset (uploaded or fetched) carries source, context, and user notes; exports include “what I did” summaries and citations/links.
+•	Readable comparisons: legends stay logical; datasets remain distinguishable; UI avoids clutter and duplicate controls.
+•	Failure is informative: if a file cannot be read, the app explains what to fix; error logging is actionable (for humans and agents).
+•	No feature loss: adding new capability must not break or erase existing ones; avoid duplicate/unused UI controls.
+•	Use existing ecosystems: prefer reputable libraries/tools for data access (databases/archives) over reinventing retrieval logic.
+
+3. Written development cycle (repeatable loop)
+Each capability is developed through the same cycle. The capability’s Word spec becomes the acceptance contract.
+A. Capability selection: Pick one capability (e.g., “Local upload + dataset library”). Define the boundary: what it must do and what is out of scope for this pass.
+B. Spec document (Word) — single source of truth: Create one Word document for that capability, using the standard template (Section 5). Include goals, UX expectations, failure modes, and acceptance tests.
+C. UI storyboards / interaction rules (lightweight): Capture how the user will interact (screens/tabs/controls), and what must not reset or clutter.
+D. Implementation + wiring: Build the capability and ensure UI controls actually drive the feature (no dead controls).
+E. Verification + regression checks: Run the acceptance tests defined in the spec, plus the baseline regression checklist (Section 4).
+F. Documentation update: Log what changed and why (in-repo changelog and inline comments), and link back to the spec document.
+G. Release checkpoint: Only then move on to the next capability.
+
+4. Baseline regression checklist (run every capability)
+Project-wide checks that protect against regressions and the failures you listed:
+•	UI remains navigable and uncluttered; no duplicate controls that do the same job.
+•	No dead UI elements (every button/control produces a visible, correct effect).
+•	Legends are readable and stable; no exploding label size or constant manual repositioning.
+•	Datasets persist unless the user explicitly clears them; user login/session persists.
+•	Sanity checks: no negative wavelength; X-values are monotonic; ranges look reasonable.
+•	Export still produces: plot image + plotted data + raw files + “what I did” summary + citations/links + app version/date + notes.
+•	Error logging is readable and points to root cause (no vague failures without context).
+•	Agent discipline: repo includes a written change record for the work performed.
+
+5. Standard spec document template (used for every capability)
+Every capability gets a dedicated Word document with these sections:
+1.	Summary (what it is, in one paragraph).
+2.	User outcomes (success criteria).
+3.	In scope / Out of scope.
+4.	User workflows (short stories).
+5.	UI requirements (controls, labels, what persists, what can reset).
+6.	Data expectations (inputs, common messiness, how to resolve).
+7.	Behavior rules (MUST/MUST NOT, trust constraints).
+8.	Failure modes (user-facing messages + next steps).
+9.	Provenance + notes (what is captured and displayed).
+10.	Export requirements (what is added to export bundles).
+11.	Acceptance tests (concrete checks).
+12.	Open questions (defer without losing track).
+
+6. Capability map (initial decomposition)
+Initial breakdown based on your Brain Dump. Each item becomes its own Word spec when selected.
+ID	Capability	Intent
+CAP-01	Dataset ingestion and parsing	Upload/import CSV/TXT/FITS/JCAMP; handle messy headers, wrong columns, delimiters; prompt user when needed.
+CAP-02	Dataset library (save, access, metadata)	Store datasets so you do not re-upload; retain metadata, notes, source links; permissions (private/group/public).
+CAP-03	Core plotting and overlay	Readable multi-trace plotting with stable legends, tooltips, zoom, and clear dataset identity.
+CAP-04	Notes and highlights	Point notes and X-range highlights that are saved, editable, togglable, and shareable with datasets.
+CAP-05	Normalization (Y-only, UI-selected)	Normalization modes applied only via UI selection; no normalization on ingest; never normalize X.
+CAP-06	Differential tools (A−B and A/B)	Select A and B, show labels, provide Swap A/B; handle non-overlap, trivial outputs, and stability without corrupting data.
+CAP-07	Reference data integrations	NIST and other reputable databases; import spectra/lines/functional group ranges with citations and contextual metadata.
+CAP-08	Telescope archive integrations	MAST/JWST/HST etc.; target search, instrument/range filters, file handling, metadata awareness.
+CAP-09	Organization features	Grouping by source, tags (auto-tagging), folders/collections, favorites, search/filter/sort.
+CAP-10	Sharing and collaboration	Users, groups/classes, permissions, dataset sharing, audit trail (who uploaded/edited notes).
+CAP-11	Export and reproducibility bundles	Plot + plotted data + raw files + “what I did” + citations + app version/date + notes; consistent naming.
+CAP-12	Trust and validation rules	Sanity checks (ranges, monotonic X), warnings/errors, and “don’t lie to me” enforcement.
+CAP-13	UI themes and ergonomics	Notebook + instrument panel hybrid; dark/light themes; reduce popups; keep controls discoverable.
+CAP-14	Logging and diagnostics	Human-readable error logs; agent-readable changelogs; no silent failures.
+CAP-15	Verification suite	Small repeatable test set to prevent regressions across ingestion, plotting, derived traces, exports, and logging.
+
+7. Working agreement (to avoid regressions)
+•	Every capability has a Word spec and acceptance tests before it is considered complete.
+•	Every implementation change includes a written change record in the repository (what/why/how).
+•	Inline comments exist where future agents need context (especially around tricky wiring and edge cases).
+•	No UI control is added unless it is functional, discoverable, and non-duplicative; remove or hide unused controls.
+•	New work must not break existing workflows; if it does, fixing the regression is the immediate priority.
+•	When something fails, the user sees a helpful message and the logs capture actionable context.
