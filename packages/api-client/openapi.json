@@ -1695,7 +1695,6 @@
           },
           "plot_state": {
             "additionalProperties": true,
-            "default": {},
             "title": "Plot State",
             "type": "object"
           },
@@ -1730,6 +1729,39 @@
             "title": "Label",
             "type": "string"
           },
+          "line_color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Line Color"
+          },
+          "line_dash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Line Dash"
+          },
+          "line_width": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Line Width"
+          },
           "parent_dataset_id": {
             "anyOf": [
               {
@@ -1742,7 +1774,6 @@
             "title": "Parent Dataset Id"
           },
           "provenance": {
-            "default": [],
             "items": {
               "additionalProperties": true,
               "type": "object"

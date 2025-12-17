@@ -288,7 +288,10 @@ def datasets_export_dataset_zip(dataset_id: str) -> StreamingResponse:
 def exports_what_i_see_zip(req: WhatISeeExportRequest) -> StreamingResponse:
     # CAP-11 (minimal): export the current plotted view (data + plot snapshot).
     zip_bytes = build_what_i_see_export_zip(req=req)
-    filename = "what_i_see.zip"
+    raw = (req.export_name or "what_i_see").strip() or "what_i_see"
+    safe = "".join(ch if (ch.isalnum() or ch in "-_ ") else "_" for ch in raw).strip()
+    safe = "_".join(part for part in safe.split() if part)
+    filename = f"{safe or 'what_i_see'}.zip"
     return StreamingResponse(
         io.BytesIO(zip_bytes),
         media_type="application/zip",

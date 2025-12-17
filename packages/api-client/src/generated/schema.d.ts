@@ -1017,11 +1017,8 @@ export interface components {
             matches?: {
                 [key: string]: unknown;
             }[] | null;
-            /**
-             * Plot State
-             * @default {}
-             */
-            plot_state: {
+            /** Plot State */
+            plot_state?: {
                 [key: string]: unknown;
             };
             /** Traces */
@@ -1033,13 +1030,16 @@ export interface components {
             dataset_id?: string | null;
             /** Label */
             label: string;
+            /** Line Color */
+            line_color?: string | null;
+            /** Line Dash */
+            line_dash?: string | null;
+            /** Line Width */
+            line_width?: number | null;
             /** Parent Dataset Id */
             parent_dataset_id?: string | null;
-            /**
-             * Provenance
-             * @default []
-             */
-            provenance: {
+            /** Provenance */
+            provenance?: {
                 [key: string]: unknown;
             }[];
             /** Trace Id */

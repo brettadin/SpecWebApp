@@ -22,6 +22,12 @@ def _zip_read_json(blob: bytes, name: str) -> dict:
     return json.loads(raw.decode("utf-8"))
 
 
+def _zip_read_text(blob: bytes, name: str) -> str:
+    with zipfile.ZipFile(io.BytesIO(blob), mode="r") as zf:
+        raw = zf.read(name)
+    return raw.decode("utf-8")
+
+
 def test_export_what_i_see_includes_plot_state_and_traces(tmp_path) -> None:
     os.environ["SPECTRA_DATA_DIR"] = str(tmp_path)
 
@@ -48,7 +54,11 @@ def test_export_what_i_see_includes_plot_state_and_traces(tmp_path) -> None:
 
     payload = {
         "export_name": "plot",
-        "plot_state": {"display_x_unit": "nm", "visible_trace_ids": [f"o:{detail.id}"]},
+        "plot_state": {
+            "display_x_unit": "nm",
+            "visible_trace_ids": [f"o:{detail.id}"],
+            "plotly_layout": {"xaxis": {"range": [0, 10]}},
+        },
         "traces": [
             {
                 "trace_id": f"o:{detail.id}",
@@ -59,6 +69,7 @@ def test_export_what_i_see_includes_plot_state_and_traces(tmp_path) -> None:
                 "y": [10.0, 20.0, 30.0],
                 "x_unit": "nm",
                 "y_unit": "arb",
+                "line_color": "#123",
                 "provenance": [],
             }
         ],
@@ -67,13 +78,43 @@ def test_export_what_i_see_includes_plot_state_and_traces(tmp_path) -> None:
     res = client.post("/exports/what-i-see.zip", json=payload)
     assert res.status_code == 200
     assert res.headers.get("content-type", "").startswith("application/zip")
+    assert "attachment;" in (res.headers.get("content-disposition") or "").lower()
+    assert "plot.zip" in (res.headers.get("content-disposition") or "").lower()
 
     names = _zip_names(res.content)
     assert any(n.endswith("MANIFEST.json") for n in names)
     assert any(n.endswith("provenance/plot_state.json") for n in names)
+    assert any(n.endswith("reports/what_i_did.md") for n in names)
+    assert any(n.endswith("reports/reopen_instructions.md") for n in names)
+    assert any(n.endswith("reports/citations.md") for n in names)
+    assert any(n.endswith("reports/annotations.md") for n in names)
     assert any(n.endswith("data/plotted_traces.json") for n in names)
     assert any(n.endswith("data/plotted_traces.csv") for n in names)
     assert any(n.endswith("checksums/SHA256SUMS.txt") for n in names)
+
+    plot_state_name = [n for n in names if n.endswith("provenance/plot_state.json")][0]
+    plot_state = _zip_read_json(res.content, plot_state_name)
+    assert plot_state.get("plotly_layout") == {"xaxis": {"range": [0, 10]}}
+
+    traces_name = [n for n in names if n.endswith("data/plotted_traces.json")][0]
+    traces_json = _zip_read_json(res.content, traces_name)
+    assert isinstance(traces_json.get("traces"), list)
+    assert traces_json["traces"][0].get("line_color") == "#123"
+
+    report_name = [n for n in names if n.endswith("reports/what_i_did.md")][0]
+    report = _zip_read_text(res.content, report_name)
+    assert "What I did" in report
+    assert f"`o:{detail.id}`" in report
+
+    reopen_name = [n for n in names if n.endswith("reports/reopen_instructions.md")][0]
+    reopen = _zip_read_text(res.content, reopen_name)
+    assert "Re-open instructions" in reopen
+    assert "does not ingest ZIPs" in reopen
+
+    annotations_md_name = [n for n in names if n.endswith("reports/annotations.md")][0]
+    annotations_md = _zip_read_text(res.content, annotations_md_name)
+    assert "# Annotations" in annotations_md
+    assert "No annotations" in annotations_md
 
 
 def test_export_what_i_see_includes_citations_when_present(tmp_path) -> None:
@@ -124,9 +165,16 @@ def test_export_what_i_see_includes_citations_when_present(tmp_path) -> None:
 
     res = client.post("/exports/what-i-see.zip", json=payload)
     assert res.status_code == 200
+    assert "plot.zip" in (res.headers.get("content-disposition") or "").lower()
 
     names = _zip_names(res.content)
     citations_name = [n for n in names if n.endswith("citations/citations.json")][0]
     citations = _zip_read_json(res.content, citations_name)
     assert isinstance(citations, list)
     assert any(c.get("source_url") == "https://example.test/ref" for c in citations)
+
+    citations_md_name = [n for n in names if n.endswith("reports/citations.md")][0]
+    citations_md = _zip_read_text(res.content, citations_md_name)
+    assert "https://example.test/ref" in citations_md
+
+    assert any(n.endswith("reports/annotations.md") for n in names)

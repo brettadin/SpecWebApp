@@ -239,6 +239,7 @@ export function PlotPage() {
 
   const [exportBusy, setExportBusy] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
+  const [plotlyRelayout, setPlotlyRelayout] = useState<Record<string, unknown> | null>(null)
 
   const visibleDatasetIds = useMemo(
     () => traceStates.filter((t) => t.visible).map((t) => t.datasetId),
@@ -1414,7 +1415,7 @@ export function PlotPage() {
 
     const originalTraces = activeSeries
       .filter((t) => t.series)
-      .map((t) => {
+      .map((t, idx) => {
         const s = t.series as DatasetSeries
         let x = s.x
         try {
@@ -1422,6 +1423,8 @@ export function PlotPage() {
         } catch {
           x = s.x
         }
+
+        const dash = s.reference?.data_type === 'LineList' ? null : dashStyles[idx % dashStyles.length]
 
         return {
           trace_id: `o:${t.id}`,
@@ -1433,19 +1436,22 @@ export function PlotPage() {
           y: s.y,
           x_unit: xUnitLabel,
           y_unit: formatUnit(s.y_unit),
+          line_dash: dash,
           provenance: [],
         }
       })
 
     const derivedExportTraces = derivedTraces
       .filter((t) => t.visible)
-      .map((t) => {
+      .map((t, idx) => {
         let x = t.x
         try {
           x = convertXFromCanonical(t.x, t.x_unit, displayXUnit).x
         } catch {
           x = t.x
         }
+
+        const dash = dashStyles[(idx + originalTraces.length) % dashStyles.length]
 
         return {
           trace_id: `d:${t.traceId}`,
@@ -1457,6 +1463,7 @@ export function PlotPage() {
           y: t.y,
           x_unit: xUnitLabel,
           y_unit: formatUnit(t.y_unit),
+          line_dash: dash,
           provenance: t.provenance,
         }
       })
@@ -1477,6 +1484,8 @@ export function PlotPage() {
         visible_dataset_ids: visibleDatasetIds,
         visible_derived_trace_ids: derivedTraces.filter((t) => t.visible).map((t) => t.traceId),
         show_annotations: showAnnotations,
+        plotly_layout: plotLayout,
+        plotly_relayout: plotlyRelayout,
       },
       traces,
       features: featureResults,
@@ -2629,6 +2638,7 @@ export function PlotPage() {
                 data={plotData}
                 layout={plotLayout}
                 config={{ displaylogo: false, responsive: true }}
+                onRelayout={(e) => setPlotlyRelayout(e as Record<string, unknown>)}
                 style={{ width: '100%', height: '520px' }}
               />
             </div>

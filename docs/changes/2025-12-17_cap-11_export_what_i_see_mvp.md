@@ -25,6 +25,10 @@ Adds an MVP “Export what I see” flow that packages the current plot state an
 - `annotations/annotations.json` (aggregated from referenced datasets when present)
 - `MANIFEST.json`
 - `checksums/SHA256SUMS.txt`
+- `reports/what_i_did.md` (human-readable summary)
+- `reports/reopen_instructions.md` (how to inspect/reuse the bundle)
+- `reports/citations.md` (human-readable citations summary)
+- `reports/annotations.md` (human-readable annotations summary)
 - `README.txt`
 
 ## Tests
@@ -32,4 +36,5 @@ Adds an MVP “Export what I see” flow that packages the current plot state an
 
 ## Notes
 - This is intentionally “what I see”: client-provided plotted arrays in display units.
+- The plot snapshot includes a Plotly layout/view snapshot (`plotly_layout`) and the most recent relayout event payload (`plotly_relayout`) when available.
 - Raw-source inclusion is handled by the dataset export bundle endpoint; this flow is a snapshot/export of the current plot view.

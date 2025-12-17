@@ -7,7 +7,7 @@ import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .datasets import datasets_root, get_dataset_detail
 from .version import read_version
@@ -31,6 +31,20 @@ def _raw_files(ds_dir: Path) -> list[Path]:
     return sorted([p for p in ds_dir.iterdir() if p.is_file() and p.name.startswith("raw__")])
 
 
+def _fmt_int(n: int) -> str:
+    return f"{n:,}"
+
+
+def _first_nonempty(values: list[str | None]) -> str | None:
+    for v in values:
+        if v is None:
+            continue
+        s = str(v).strip()
+        if s:
+            return s
+    return None
+
+
 class WhatISeeTrace(BaseModel):
     trace_id: str
     label: str
@@ -41,12 +55,17 @@ class WhatISeeTrace(BaseModel):
     y: list[float]
     x_unit: str | None = None
     y_unit: str | None = None
-    provenance: list[dict] = []
+    # Optional plotting style hints for reproducibility.
+    line_color: str | None = None
+    line_dash: str | None = None
+    line_width: float | None = None
+
+    provenance: list[dict] = Field(default_factory=list)
 
 
 class WhatISeeExportRequest(BaseModel):
     export_name: str | None = None
-    plot_state: dict = {}
+    plot_state: dict = Field(default_factory=dict)
     traces: list[WhatISeeTrace]
     # Optional CAP-09 artifacts.
     features: list[dict] | None = None
@@ -77,6 +96,115 @@ def build_what_i_see_export_zip(*, req: WhatISeeExportRequest) -> bytes:
         req.plot_state or {}, indent=2, sort_keys=True, ensure_ascii=False
     ).encode("utf-8")
     files[f"{root}provenance/plot_state.json"] = plot_state_bytes
+
+    # Human-readable report
+    ps = req.plot_state or {}
+    x_unit = _first_nonempty([ps.get("x_unit_label"), ps.get("display_x_unit")])
+    y_unit = _first_nonempty([ps.get("y_unit_label")])
+    show_anns = ps.get("show_annotations")
+    report_lines: list[str] = [
+        "# What I did (CAP-11 — what I see)",
+        "",
+        f"Exported at: `{exported_at}`",
+        f"Export name: `{base_name}`",
+        "",
+        "## Plot snapshot",
+        f"- X unit: `{x_unit or 'unknown'}`",
+        f"- Y unit: `{y_unit or 'unknown'}`",
+        f"- Annotations shown: `{show_anns}`"
+        if show_anns is not None
+        else "- Annotations shown: (unknown)",
+    ]
+
+    visible_ds = ps.get("visible_dataset_ids")
+    if isinstance(visible_ds, list):
+        report_lines.append(f"- Visible datasets: `{_fmt_int(len(visible_ds))}`")
+    visible_derived = ps.get("visible_derived_trace_ids")
+    if isinstance(visible_derived, list):
+        report_lines.append(f"- Visible derived traces: `{_fmt_int(len(visible_derived))}`")
+
+    report_lines.extend(["", "## Traces", ""])
+    for t in req.traces:
+        n_points = min(len(t.x), len(t.y))
+        prov_len = len(t.provenance or [])
+        report_lines.append(
+            f"- `{t.trace_id}` — {t.label} ({t.trace_kind}), "
+            f"points={_fmt_int(n_points)}, provenance={_fmt_int(prov_len)}"
+        )
+        style_bits: list[str] = []
+        if t.line_color:
+            style_bits.append(f"color={t.line_color}")
+        if t.line_dash:
+            style_bits.append(f"dash={t.line_dash}")
+        if t.line_width is not None:
+            style_bits.append(f"width={t.line_width}")
+        if style_bits:
+            report_lines.append(f"  - style: {', '.join(style_bits)}")
+
+    report_lines.extend(["", "## CAP-09 artifacts", ""])
+    report_lines.append(
+        f"- Features included: `{_fmt_int(len(req.features))}`"
+        if isinstance(req.features, list)
+        else "- Features included: `0`"
+    )
+    report_lines.append(
+        f"- Matches included: `{_fmt_int(len(req.matches))}`"
+        if isinstance(req.matches, list)
+        else "- Matches included: `0`"
+    )
+
+    report_lines.extend(["", "## Files in this bundle", ""])
+    report_lines.extend(
+        [
+            "- `provenance/plot_state.json` — plot snapshot (Plotly layout/relayout if provided)",
+            "- `data/plotted_traces.json` — traces + arrays as currently plotted",
+            "- `data/plotted_traces.csv` — traces in long-form CSV",
+            "- `citations/citations.json` — source pointers/citations when available",
+            "- `reports/citations.md` — human-readable citations summary",
+            "- `reports/annotations.md` — human-readable annotations summary",
+            "- `annotations/annotations.json` — annotations for referenced datasets (if present)",
+            "- `matches/` — optional CAP-09 features/matches (if provided)",
+            "- `MANIFEST.json` — machine-readable manifest",
+            "- `checksums/SHA256SUMS.txt` — SHA-256 checksums",
+        ]
+    )
+
+    files[f"{root}reports/what_i_did.md"] = ("\n".join(report_lines) + "\n").encode("utf-8")
+
+    reopen = [
+        "# Re-open instructions (CAP-11 — what I see)",
+        "",
+        "This bundle is a *snapshot of what was plotted*, not a raw re-import of the",
+        "original source",
+        "files.",
+        "",
+        "## Quick start",
+        "1. Open `data/plotted_traces.csv` in a spreadsheet / Python / R to inspect the exported",
+        "   curves.",
+        "2. Open `provenance/plot_state.json` to see display units, visible trace IDs,",
+        "   and any Plotly",
+        "   layout/relayout state.",
+        "3. Open `reports/what_i_did.md` for a human-readable summary.",
+        "",
+        "## What you can reproduce",
+        "- The plotted X/Y arrays (exactly as displayed at export time)",
+        "- Basic trace styling hints if provided (`line_dash`, `line_color`, `line_width`)",
+        "- Plotly view/layout hints if present (`plotly_layout`, `plotly_relayout`)",
+        "- Citation pointers for referenced datasets (when available)",
+        "- Annotations for referenced datasets (if present)",
+        "",
+        "## What this does not include",
+        "- Original raw payloads from referenced sources",
+        "  (use dataset export for that when allowed)",
+        "- A one-click import endpoint (this API currently exports ZIPs; it does not ingest ZIPs)",
+        "",
+        "## Files of interest",
+        "- `data/plotted_traces.json`: includes per-trace metadata and arrays",
+        "- `citations/citations.json`: source_url / retrieved_at / citation_text",
+        "- `checksums/SHA256SUMS.txt`: verify integrity",
+        "",
+    ]
+    files[f"{root}reports/reopen_instructions.md"] = ("\n".join(reopen) + "\n").encode("utf-8")
 
     # Plotted traces JSON
     traces_payload = {
@@ -119,6 +247,7 @@ def build_what_i_see_export_zip(*, req: WhatISeeExportRequest) -> bytes:
     datasets: list[dict] = []
     citations: list[dict] = []
     all_annotations: list[dict] = []
+    annotations_count_by_dataset_id: dict[str, int] = {}
 
     for ds_id in sorted(dataset_ids):
         ds_dir = datasets_root() / ds_id
@@ -169,6 +298,7 @@ def build_what_i_see_export_zip(*, req: WhatISeeExportRequest) -> bytes:
             try:
                 raw_anns = json.loads(ann_path.read_text(encoding="utf-8"))
                 if isinstance(raw_anns, list):
+                    annotations_count_by_dataset_id[ds_id] = len(raw_anns)
                     for a in raw_anns:
                         if isinstance(a, dict):
                             all_annotations.append(a)
@@ -178,6 +308,65 @@ def build_what_i_see_export_zip(*, req: WhatISeeExportRequest) -> bytes:
     files[f"{root}citations/citations.json"] = json.dumps(
         citations, indent=2, sort_keys=True, ensure_ascii=False
     ).encode("utf-8")
+
+    citations_md: list[str] = ["# Citations", ""]
+    if citations:
+        citations_md.append(
+            "This file summarizes `citations/citations.json` into a human-readable list."
+        )
+        citations_md.append("")
+        for c in citations:
+            ds_id = str(c.get("dataset_id") or "").strip() or "(unknown dataset)"
+            title = str(c.get("source_name") or "").strip() or "(unknown source)"
+            url = str(c.get("source_url") or "").strip() or None
+            retrieved = str(c.get("retrieved_at") or "").strip() or None
+            cite_text = str(c.get("citation_text") or "").strip() or None
+            data_type = str(c.get("data_type") or "").strip() or None
+
+            heading = f"- **{title}**"
+            if data_type:
+                heading = f"{heading} ({data_type})"
+            citations_md.append(heading)
+            citations_md.append(f"  - dataset_id: `{ds_id}`")
+            if url:
+                citations_md.append(f"  - url: {url}")
+            if retrieved:
+                citations_md.append(f"  - retrieved_at: `{retrieved}`")
+            if cite_text:
+                citations_md.append(f"  - citation: {cite_text}")
+            citations_md.append("")
+    else:
+        citations_md.append("No citation metadata was available for the exported traces.")
+        citations_md.append("")
+
+    files[f"{root}reports/citations.md"] = ("\n".join(citations_md)).encode("utf-8")
+
+    annotations_md: list[str] = ["# Annotations", ""]
+    if all_annotations:
+        annotations_md.append(
+            "This file summarizes `annotations/annotations.json` into a human-readable overview."
+        )
+        annotations_md.append("")
+        annotations_md.append(f"Total annotations: `{_fmt_int(len(all_annotations))}`")
+        annotations_md.append("")
+        annotations_md.append("## By dataset")
+        annotations_md.append("")
+        ds_name_by_id = {d.get("id"): d.get("name") for d in datasets if isinstance(d, dict)}
+        for ds_id in sorted(annotations_count_by_dataset_id.keys()):
+            n = annotations_count_by_dataset_id.get(ds_id) or 0
+            name = str(ds_name_by_id.get(ds_id) or "").strip() or None
+            label = f"- `{ds_id}`"
+            if name:
+                label = f"{label} — {name}"
+            annotations_md.append(f"{label}: `{_fmt_int(n)}`")
+        annotations_md.append("")
+        annotations_md.append("See `annotations/annotations.json` for full details.")
+        annotations_md.append("")
+    else:
+        annotations_md.append("No annotations were available for the exported traces.")
+        annotations_md.append("")
+
+    files[f"{root}reports/annotations.md"] = ("\n".join(annotations_md)).encode("utf-8")
     if all_annotations:
         files[f"{root}annotations/annotations.json"] = json.dumps(
             all_annotations, indent=2, sort_keys=True, ensure_ascii=False
@@ -195,9 +384,13 @@ def build_what_i_see_export_zip(*, req: WhatISeeExportRequest) -> bytes:
             "plotted_traces_csv": True,
             "plotted_traces_json": True,
             "citations": True,
+            "citations_report": True,
             "annotations": bool(all_annotations),
+            "annotations_report": True,
             "features": req.features is not None,
             "matches": req.matches is not None,
+            "what_i_did_report": True,
+            "reopen_instructions": True,
         },
         "datasets": datasets,
         "traces": [
@@ -215,9 +408,13 @@ def build_what_i_see_export_zip(*, req: WhatISeeExportRequest) -> bytes:
         ],
         "paths": {
             "plot_state": "provenance/plot_state.json",
+            "what_i_did_report": "reports/what_i_did.md",
+            "reopen_instructions": "reports/reopen_instructions.md",
             "plotted_traces_json": "data/plotted_traces.json",
             "plotted_traces_csv": "data/plotted_traces.csv",
             "citations": "citations/citations.json",
+            "citations_report": "reports/citations.md",
+            "annotations_report": "reports/annotations.md",
             "annotations": "annotations/annotations.json" if all_annotations else None,
         },
     }
