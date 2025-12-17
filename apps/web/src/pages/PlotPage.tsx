@@ -120,6 +120,20 @@ function nowIso() {
   return new Date().toISOString()
 }
 
+function makeTimestampForFilename(d: Date) {
+  // e.g. 2025-12-17T21-08-50Z
+  return d
+    .toISOString()
+    .replace(/\..*$/, 'Z')
+    .replace(/:/g, '-')
+}
+
+function sanitizeFilename(name: string) {
+  // Windows disallows: \ / : * ? " < > |
+  const cleaned = name.replace(/[\\/:*?"<>|]/g, '_').trim()
+  return cleaned || 'what_i_see.zip'
+}
+
 export function PlotPage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -222,6 +236,9 @@ export function PlotPage() {
       }>
     }>
   >([])
+
+  const [exportBusy, setExportBusy] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
 
   const visibleDatasetIds = useMemo(
     () => traceStates.filter((t) => t.visible).map((t) => t.datasetId),
@@ -1383,6 +1400,114 @@ export function PlotPage() {
     }
   }
 
+  async function onExportWhatISee() {
+    setExportError(null)
+
+    const timestamp = makeTimestampForFilename(new Date())
+    const defaultName = `what_i_see_${timestamp}.zip`
+    const chosen = globalThis.prompt ? globalThis.prompt('Save export as…', defaultName) : defaultName
+    if (chosen === null) return
+    const downloadName = (() => {
+      const raw = sanitizeFilename(chosen)
+      return raw.toLowerCase().endsWith('.zip') ? raw : `${raw}.zip`
+    })()
+
+    const originalTraces = activeSeries
+      .filter((t) => t.series)
+      .map((t) => {
+        const s = t.series as DatasetSeries
+        let x = s.x
+        try {
+          x = convertXFromCanonical(s.x, s.x_unit, displayXUnit).x
+        } catch {
+          x = s.x
+        }
+
+        return {
+          trace_id: `o:${t.id}`,
+          label: t.meta?.name || t.id,
+          trace_kind: 'original',
+          dataset_id: t.id,
+          parent_dataset_id: null,
+          x,
+          y: s.y,
+          x_unit: xUnitLabel,
+          y_unit: formatUnit(s.y_unit),
+          provenance: [],
+        }
+      })
+
+    const derivedExportTraces = derivedTraces
+      .filter((t) => t.visible)
+      .map((t) => {
+        let x = t.x
+        try {
+          x = convertXFromCanonical(t.x, t.x_unit, displayXUnit).x
+        } catch {
+          x = t.x
+        }
+
+        return {
+          trace_id: `d:${t.traceId}`,
+          label: t.name,
+          trace_kind: 'derived',
+          dataset_id: null,
+          parent_dataset_id: t.parentDatasetId,
+          x,
+          y: t.y,
+          x_unit: xUnitLabel,
+          y_unit: formatUnit(t.y_unit),
+          provenance: t.provenance,
+        }
+      })
+
+    const traces = [...originalTraces, ...derivedExportTraces]
+    if (!traces.length) {
+      setExportError('No visible traces to export.')
+      return
+    }
+
+    const payload = {
+      export_name: downloadName.replace(/\.zip$/i, ''),
+      plot_state: {
+        exported_at: nowIso(),
+        display_x_unit: displayXUnit,
+        x_unit_label: xUnitLabel,
+        y_unit_label: formatUnit(unitHints.y),
+        visible_dataset_ids: visibleDatasetIds,
+        visible_derived_trace_ids: derivedTraces.filter((t) => t.visible).map((t) => t.traceId),
+        show_annotations: showAnnotations,
+      },
+      traces,
+      features: featureResults,
+      matches: matchResults,
+    }
+
+    setExportBusy(true)
+    try {
+      const res = await fetch(`${API_BASE}/exports/what-i-see.zip`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`)
+
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = downloadName
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      setExportError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setExportBusy(false)
+    }
+  }
+
   async function onSwapDiff() {
     setWarning(null)
     setError(null)
@@ -2207,6 +2332,13 @@ export function PlotPage() {
                       <tbody>
                         {matchResults.map((m) => {
                           const top = m.candidates[0]
+                          const second = m.candidates[1]
+                          const ambiguous =
+                            !!top &&
+                            !!second &&
+                            Number.isFinite(top.score) &&
+                            Number.isFinite(second.score) &&
+                            Math.abs(top.score - second.score) <= 0.02
                           const highlighted = highlightedFeatureRowId === m.feature_row_id
                           return (
                             <tr
@@ -2218,7 +2350,7 @@ export function PlotPage() {
                                 {Number.isFinite(m.feature_center_x_display) ? m.feature_center_x_display.toFixed(6) : ''}
                               </td>
                               <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>
-                                {top ? top.label : '(none)'}
+                                {top ? `${top.label}${ambiguous ? ' (ambiguous)' : ''}` : '(none)'}
                               </td>
                               <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>
                                 {top ? top.score.toFixed(3) : ''}
@@ -2235,7 +2367,21 @@ export function PlotPage() {
 
                   {selectedMatchResult ? (
                     <div style={{ marginTop: '0.5rem', border: '1px solid #e5e7eb', padding: '0.5rem' }}>
-                      <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Scoring breakdown</div>
+                      {(() => {
+                        const top = selectedMatchResult.candidates[0]
+                        const second = selectedMatchResult.candidates[1]
+                        const ambiguous =
+                          !!top &&
+                          !!second &&
+                          Number.isFinite(top.score) &&
+                          Number.isFinite(second.score) &&
+                          Math.abs(top.score - second.score) <= 0.02
+                        return (
+                          <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>
+                            Scoring breakdown{ambiguous ? ' (ambiguous)' : ''}
+                          </div>
+                        )
+                      })()}
                       <div style={{ fontSize: '0.85rem', opacity: 0.9 }}>
                         Feature x: <strong>{selectedMatchResult.feature_center_x_display.toFixed(6)}</strong> {xUnitLabel}
                       </div>
@@ -2453,6 +2599,22 @@ export function PlotPage() {
               Axes: x ({xUnitLabel}), y ({formatUnit(unitHints.y)})
             </div>
             <div>Derived count: {derivedTraces.length}</div>
+          </div>
+
+          <div style={{ marginTop: '0.75rem', borderTop: '1px solid #e5e7eb', paddingTop: '0.75rem' }}>
+            <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Export (CAP-11)</div>
+            <button
+              type="button"
+              onClick={onExportWhatISee}
+              disabled={
+                exportBusy ||
+                (visibleDatasetIds.length === 0 && !derivedTraces.some((t) => t.visible))
+              }
+              style={{ cursor: 'pointer' }}
+            >
+              {exportBusy ? 'Exporting…' : 'Export what I see (.zip)'}
+            </button>
+            {exportError ? <p style={{ color: 'crimson', marginTop: '0.5rem' }}>{exportError}</p> : null}
           </div>
         </aside>
 

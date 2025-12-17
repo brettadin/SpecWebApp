@@ -423,8 +423,8 @@ describe('PlotPage (CAP-03)', () => {
           ok: true,
           json: async () => ({
             id: 'lines-1',
-            x: [1.05, 2.0, 3.1],
-            y: [10, 1, 5],
+            x: [0.95, 1.05, 2.0],
+            y: [1, 1, 1],
             x_unit: 'nm',
             y_unit: null,
             reference: {
@@ -471,9 +471,14 @@ describe('PlotPage (CAP-03)', () => {
     const matchSection = screen.getByText('Match (CAP-09)').parentElement
     expect(matchSection).toBeTruthy()
 
+    // The top two candidates have identical scores, so the top candidate is flagged as ambiguous.
+    expect(within(matchSection as HTMLElement).getAllByText(/ambiguous/i).length).toBeGreaterThan(0)
+
     // Click a match row to reveal the scoring breakdown.
-    fireEvent.click(within(matchSection as HTMLElement).getByText('1.000000'))
-    expect(within(matchSection as HTMLElement).getByText('Scoring breakdown')).toBeTruthy()
+    const resultsTable = within(matchSection as HTMLElement).getByText('top candidate').closest('table')
+    expect(resultsTable).toBeTruthy()
+    fireEvent.click(within(resultsTable as HTMLElement).getByText('1.000000'))
+    expect(within(matchSection as HTMLElement).getByText(/Scoring breakdown/i)).toBeTruthy()
     expect(within(matchSection as HTMLElement).getByText('x_ref')).toBeTruthy()
     expect(within(matchSection as HTMLElement).getByText('Δ')).toBeTruthy()
   })

@@ -1649,6 +1649,161 @@
         ],
         "title": "ValidationError",
         "type": "object"
+      },
+      "WhatISeeExportRequest": {
+        "properties": {
+          "export_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Export Name"
+          },
+          "features": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Features"
+          },
+          "matches": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matches"
+          },
+          "plot_state": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Plot State",
+            "type": "object"
+          },
+          "traces": {
+            "items": {
+              "$ref": "#/components/schemas/WhatISeeTrace"
+            },
+            "title": "Traces",
+            "type": "array"
+          }
+        },
+        "required": [
+          "traces"
+        ],
+        "title": "WhatISeeExportRequest",
+        "type": "object"
+      },
+      "WhatISeeTrace": {
+        "properties": {
+          "dataset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataset Id"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "parent_dataset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Dataset Id"
+          },
+          "provenance": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Provenance",
+            "type": "array"
+          },
+          "trace_id": {
+            "title": "Trace Id",
+            "type": "string"
+          },
+          "trace_kind": {
+            "title": "Trace Kind",
+            "type": "string"
+          },
+          "x": {
+            "items": {
+              "type": "number"
+            },
+            "title": "X",
+            "type": "array"
+          },
+          "x_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X Unit"
+          },
+          "y": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Y",
+            "type": "array"
+          },
+          "y_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Y Unit"
+          }
+        },
+        "required": [
+          "trace_id",
+          "label",
+          "trace_kind",
+          "x",
+          "y"
+        ],
+        "title": "WhatISeeTrace",
+        "type": "object"
       }
     }
   },
@@ -2054,6 +2209,79 @@
           }
         },
         "summary": "Datasets Create Derived"
+      }
+    },
+    "/datasets/{dataset_id}/export/dataset.zip": {
+      "get": {
+        "operationId": "datasets_export_dataset_zip_datasets__dataset_id__export_dataset_zip_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_id",
+            "required": true,
+            "schema": {
+              "title": "Dataset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Datasets Export Dataset Zip"
+      }
+    },
+    "/exports/what-i-see.zip": {
+      "post": {
+        "operationId": "exports_what_i_see_zip_exports_what_i_see_zip_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WhatISeeExportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Exports What I See Zip"
       }
     },
     "/health": {

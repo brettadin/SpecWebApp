@@ -141,6 +141,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/datasets/{dataset_id}/export/dataset.zip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Datasets Export Dataset Zip */
+        get: operations["datasets_export_dataset_zip_datasets__dataset_id__export_dataset_zip_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/exports/what-i-see.zip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Exports What I See Zip */
+        post: operations["exports_what_i_see_zip_exports_what_i_see_zip_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -971,6 +1005,56 @@ export interface components {
             /** Error Type */
             type: string;
         };
+        /** WhatISeeExportRequest */
+        WhatISeeExportRequest: {
+            /** Export Name */
+            export_name?: string | null;
+            /** Features */
+            features?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** Matches */
+            matches?: {
+                [key: string]: unknown;
+            }[] | null;
+            /**
+             * Plot State
+             * @default {}
+             */
+            plot_state: {
+                [key: string]: unknown;
+            };
+            /** Traces */
+            traces: components["schemas"]["WhatISeeTrace"][];
+        };
+        /** WhatISeeTrace */
+        WhatISeeTrace: {
+            /** Dataset Id */
+            dataset_id?: string | null;
+            /** Label */
+            label: string;
+            /** Parent Dataset Id */
+            parent_dataset_id?: string | null;
+            /**
+             * Provenance
+             * @default []
+             */
+            provenance: {
+                [key: string]: unknown;
+            }[];
+            /** Trace Id */
+            trace_id: string;
+            /** Trace Kind */
+            trace_kind: string;
+            /** X */
+            x: number[];
+            /** X Unit */
+            x_unit?: string | null;
+            /** Y */
+            y: number[];
+            /** Y Unit */
+            y_unit?: string | null;
+        };
     };
     responses: never;
     parameters: never;
@@ -1257,6 +1341,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DatasetDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    datasets_export_dataset_zip_datasets__dataset_id__export_dataset_zip_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    exports_what_i_see_zip_exports_what_i_see_zip_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WhatISeeExportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import io
 import json
 import os
 from datetime import UTC, datetime
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from .annotations import (
@@ -29,6 +31,11 @@ from .datasets import (
     list_datasets,
     save_dataset,
     sha256_bytes,
+)
+from .export_bundle import (
+    WhatISeeExportRequest,
+    build_dataset_export_zip,
+    build_what_i_see_export_zip,
 )
 from .ingest_preview import IngestPreviewResponse, build_ingest_preview, parse_delimited_xy
 from .mast_client import MastHTTPError
@@ -262,6 +269,31 @@ def datasets_get(dataset_id: str) -> DatasetDetail:
 @app.get("/datasets/{dataset_id}/data")
 def datasets_get_data(dataset_id: str) -> dict:
     return get_dataset_xy(dataset_id)
+
+
+@app.get("/datasets/{dataset_id}/export/dataset.zip")
+def datasets_export_dataset_zip(dataset_id: str) -> StreamingResponse:
+    # CAP-11 (minimal): export a single dataset as a reproducible ZIP bundle.
+    _ = get_dataset_detail(dataset_id)
+    zip_bytes = build_dataset_export_zip(dataset_id=dataset_id)
+    filename = f"dataset_{dataset_id}.zip"
+    return StreamingResponse(
+        io.BytesIO(zip_bytes),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.post("/exports/what-i-see.zip")
+def exports_what_i_see_zip(req: WhatISeeExportRequest) -> StreamingResponse:
+    # CAP-11 (minimal): export the current plotted view (data + plot snapshot).
+    zip_bytes = build_what_i_see_export_zip(req=req)
+    filename = "what_i_see.zip"
+    return StreamingResponse(
+        io.BytesIO(zip_bytes),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 class DerivedDatasetCreate(BaseModel):

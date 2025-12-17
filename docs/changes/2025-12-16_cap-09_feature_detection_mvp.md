@@ -43,6 +43,8 @@ CAP-09 requires assistance-oriented feature detection that operates on the trace
 
 - Applying top matches to annotations persists a compact candidate label (to keep notes readable) while the Match panel retains richer per-candidate detail.
 
+- Match results flag “(ambiguous)” when the top two candidates score nearly identically (a light-weight uncertainty signal).
+
 ### Tests
 
 - Unit tests for feature detection and for reverse unit conversion.
