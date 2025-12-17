@@ -76,6 +76,18 @@ def test_cap07_import_reference_jcamp_dx_by_url(tmp_path, monkeypatch):
         ds = client.get(f"/datasets/{ds_id}")
         assert ds.status_code == 200
 
+        detail = ds.json()
+        assert detail.get("reference", {}).get("source_name") == "NIST Chemistry WebBook"
+        assert detail.get("reference", {}).get("citation_present") is True
+
+        listed = client.get("/datasets")
+        assert listed.status_code == 200
+        summaries = listed.json()
+        match = next((d for d in summaries if d.get("id") == ds_id), None)
+        assert match is not None
+        assert match.get("reference", {}).get("source_name") == "NIST Chemistry WebBook"
+        assert match.get("reference", {}).get("citation_present") is True
+
         # Reference metadata should be persisted in dataset.json.
         meta = (tmp_path / "datasets" / ds_id / "dataset.json").read_text(encoding="utf-8")
         assert "reference" in meta

@@ -24,10 +24,13 @@ CAP-07 introduces trustworthy, reproducible ingestion of external reference data
   - Server fetches a CSV/tab payload by URL and parses numeric rows into a simple line list (x positions + strength).
   - Persists CAP-07 reference metadata under `reference` with `data_type=LineList`.
 
+- Added `reference` summary fields to `GET /datasets` and `GET /datasets/{id}` responses (in addition to `/datasets/{id}/data`) so the UI can show citation/license status without extra calls.
+
 ### Web
 
 - Added a minimal "Add reference data (CAP-07)" section in the Library page to import a JCAMP-DX URL with required citation text.
 - Extended the Library page CAP-07 section with a minimal line list (CSV URL) import form.
+- Library dataset list now shows a compact reference/citation indicator when present.
 
 ### Plot
 

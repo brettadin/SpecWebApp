@@ -1,0 +1,55 @@
+Running API ruff format (check)...
+22 files already formatted
+Running API ruff lint...
+All checks passed!
+Running API pytest...
+..................                                                       [100%]
+18 passed in 6.37s
+Exporting OpenAPI snapshot...
+Installing Node deps...
+
+up to date, audited 644 packages in 3s
+
+155 packages are looking for funding
+  run `npm fund` for details
+
+found 0 vulnerabilities
+Running Web lint...
+
+> web@0.0.0 lint
+> eslint .
+
+Running Web tests...
+
+> web@0.0.0 test
+> vitest run
+
+
+[1m[46m RUN [49m[22m [36mv4.0.15 [39m[90mC:/Code/SpecWebApp/apps/web[39m
+
+ [32mΓ£ô[39m src/lib/featureDetection.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 10[2mms[22m[39m
+ [32mΓ£ô[39m src/lib/transforms.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 12[2mms[22m[39m
+ [32mΓ£ô[39m src/pages/DocsPage.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[33m 2543[2mms[22m[39m
+     [33m[2mΓ£ô[22m[39m prefills search from URL params [33m 343[2mms[22m[39m
+     [33m[2mΓ£ô[22m[39m filters pages by query [33m 2197[2mms[22m[39m
+ [32mΓ£ô[39m src/pages/PlotPage.test.tsx [2m([22m[2m8 tests[22m[2m)[22m[33m 3460[2mms[22m[39m
+     [33m[2mΓ£ô[22m[39m lists datasets and toggles a trace on [33m 335[2mms[22m[39m
+     [33m[2mΓ£ô[22m[39m computes A-B differential and adds a derived trace [33m 421[2mms[22m[39m
+     [33m[2mΓ£ô[22m[39m runs Feature Finder (CAP-09) and plots feature markers [33m 341[2mms[22m[39m
+     [33m[2mΓ£ô[22m[39m matches detected features to a line list within tolerance (CAP-09) [33m 892[2mms[22m[39m
+     [33m[2mΓ£ô[22m[39m matches detected features to band/range annotations (CAP-09) [33m 675[2mms[22m[39m
+ [32mΓ£ô[39m src/App.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[33m 514[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m5 passed[39m[22m[90m (5)[39m
+[2m      Tests [22m [1m[32m23 passed[39m[22m[90m (23)[39m
+[2m   Start at [22m 19:12:32
+[2m   Duration [22m 9.75s[2m (transform 1.67s, setup 4.08s, import 5.46s, tests 6.54s, environment 19.55s)[22m
+
+Generating api-client types...
+
+> @spectra/api-client@0.1.0 gen
+> openapi-typescript ./openapi.json -o ./src/generated/schema.d.ts
+
+Γ£¿ openapi-typescript 7.10.1
+≡ƒÜÇ ./openapi.json ΓåÆ ./src/generated/schema.d.ts [259.9ms]
+VERIFY complete.

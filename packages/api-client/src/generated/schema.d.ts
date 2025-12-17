@@ -226,6 +226,125 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/telescope/import/fits-by-url": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Telescope Import Fits By Url */
+        post: operations["telescope_import_fits_by_url_telescope_import_fits_by_url_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/telescope/mast/caom-products": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Telescope Mast Caom Products */
+        post: operations["telescope_mast_caom_products_telescope_mast_caom_products_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/telescope/mast/caom-search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Telescope Mast Caom Search */
+        post: operations["telescope_mast_caom_search_telescope_mast_caom_search_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/telescope/mast/import/fits-by-data-uri": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Telescope Mast Import Fits By Data Uri */
+        post: operations["telescope_mast_import_fits_by_data_uri_telescope_mast_import_fits_by_data_uri_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/telescope/mast/name-lookup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Telescope Mast Name Lookup */
+        post: operations["telescope_mast_name_lookup_telescope_mast_name_lookup_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/telescope/mast/preview/fits-by-data-uri": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Telescope Mast Preview Fits By Data Uri */
+        post: operations["telescope_mast_preview_fits_by_data_uri_telescope_mast_preview_fits_by_data_uri_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/telescope/preview/fits-by-url": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Telescope Preview Fits By Url */
+        post: operations["telescope_preview_fits_by_url_telescope_preview_fits_by_url_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -349,6 +468,7 @@ export interface components {
             id: string;
             /** Name */
             name: string;
+            reference?: components["schemas"]["ReferenceSummary"] | null;
             /** Sha256 */
             sha256: string;
             /** Source File Name */
@@ -370,6 +490,7 @@ export interface components {
             id: string;
             /** Name */
             name: string;
+            reference?: components["schemas"]["ReferenceSummary"] | null;
             /** Sha256 */
             sha256: string;
             /** Source File Name */
@@ -441,6 +562,49 @@ export interface components {
             x_unit_hint: string | null;
             /** Y Unit Hint */
             y_unit_hint: string | null;
+        };
+        /** MastCaomConeRequest */
+        MastCaomConeRequest: {
+            /** Dataproduct Types */
+            dataproduct_types?: string[] | null;
+            /** Dec */
+            dec: number;
+            /** Missions */
+            missions?: string[] | null;
+            /**
+             * Page
+             * @default 1
+             */
+            page: number;
+            /**
+             * Pagesize
+             * @default 200
+             */
+            pagesize: number;
+            /** Ra */
+            ra: number;
+            /** Radius */
+            radius: number;
+        };
+        /** MastCaomProductsRequest */
+        MastCaomProductsRequest: {
+            /** Obsid */
+            obsid: number | string;
+            /**
+             * Page
+             * @default 1
+             */
+            page: number;
+            /**
+             * Pagesize
+             * @default 200
+             */
+            pagesize: number;
+        };
+        /** MastNameLookupRequest */
+        MastNameLookupRequest: {
+            /** Input */
+            input: string;
         };
         /** ReferenceImportJCAMPRequest */
         ReferenceImportJCAMPRequest: {
@@ -576,6 +740,227 @@ export interface components {
              * @enum {string}
              */
             redistribution_allowed: "yes" | "no" | "unknown";
+        };
+        /** ReferenceSummary */
+        ReferenceSummary: {
+            /** Citation Present */
+            citation_present?: boolean | null;
+            /** Data Type */
+            data_type?: string | null;
+            /** License Redistribution Allowed */
+            license_redistribution_allowed?: string | null;
+            /** Retrieved At */
+            retrieved_at?: string | null;
+            /** Sharing Visibility */
+            sharing_visibility?: string | null;
+            /** Source Name */
+            source_name?: string | null;
+            /** Source Url */
+            source_url?: string | null;
+            /** Trust Tier */
+            trust_tier?: string | null;
+        };
+        /** TelescopeFITSImportByDataURIRequest */
+        TelescopeFITSImportByDataURIRequest: {
+            /** Citation Text */
+            citation_text: string;
+            /** Data Uri */
+            data_uri: string;
+            /** Hdu Index */
+            hdu_index: number;
+            /**
+             * Mission
+             * @default Other
+             * @enum {string}
+             */
+            mission: "JWST" | "HST" | "HLSP" | "Other";
+            /** Product Filename */
+            product_filename?: string | null;
+            /**
+             * Query
+             * @default {}
+             */
+            query: {
+                [key: string]: unknown;
+            };
+            /**
+             * Refresh
+             * @default false
+             */
+            refresh: boolean;
+            /** Retrieved At */
+            retrieved_at?: string | null;
+            /**
+             * Source Name
+             * @default MAST
+             */
+            source_name: string;
+            /** Title */
+            title: string;
+            /**
+             * Trust Tier
+             * @default Primary/Authoritative
+             */
+            trust_tier: string;
+            /** X Index */
+            x_index: number;
+            /** X Unit */
+            x_unit?: string | null;
+            /** Y Index */
+            y_index: number;
+            /** Y Unit */
+            y_unit?: string | null;
+        };
+        /** TelescopeFITSImportRequest */
+        TelescopeFITSImportRequest: {
+            /** Citation Text */
+            citation_text: string;
+            /** Hdu Index */
+            hdu_index: number;
+            /**
+             * Mission
+             * @default Other
+             * @enum {string}
+             */
+            mission: "JWST" | "HST" | "HLSP" | "Other";
+            /**
+             * Query
+             * @default {}
+             */
+            query: {
+                [key: string]: unknown;
+            };
+            /** Retrieved At */
+            retrieved_at?: string | null;
+            /**
+             * Source Name
+             * @default MAST
+             */
+            source_name: string;
+            /**
+             * Source Url
+             * Format: uri
+             */
+            source_url: string;
+            /** Title */
+            title: string;
+            /**
+             * Trust Tier
+             * @default Primary/Authoritative
+             */
+            trust_tier: string;
+            /** X Index */
+            x_index: number;
+            /** X Unit */
+            x_unit?: string | null;
+            /** Y Index */
+            y_index: number;
+            /** Y Unit */
+            y_unit?: string | null;
+        };
+        /** TelescopeFITSPreviewByDataURIRequest */
+        TelescopeFITSPreviewByDataURIRequest: {
+            /** Citation Text */
+            citation_text: string;
+            /** Data Uri */
+            data_uri: string;
+            /**
+             * Mission
+             * @default Other
+             * @enum {string}
+             */
+            mission: "JWST" | "HST" | "HLSP" | "Other";
+            /** Product Filename */
+            product_filename?: string | null;
+            /**
+             * Query
+             * @default {}
+             */
+            query: {
+                [key: string]: unknown;
+            };
+            /**
+             * Refresh
+             * @default false
+             */
+            refresh: boolean;
+            /** Retrieved At */
+            retrieved_at?: string | null;
+            /**
+             * Source Name
+             * @default MAST
+             */
+            source_name: string;
+            /**
+             * Trust Tier
+             * @default Primary/Authoritative
+             */
+            trust_tier: string;
+        };
+        /** TelescopeFITSPreviewCandidate */
+        TelescopeFITSPreviewCandidate: {
+            /** Columns */
+            columns: string[];
+            /** Hdu Index */
+            hdu_index: number;
+            /** Hdu Name */
+            hdu_name: string;
+            /** Suggested X Index */
+            suggested_x_index: number | null;
+            /** Suggested Y Index */
+            suggested_y_index: number | null;
+        };
+        /** TelescopeFITSPreviewRequest */
+        TelescopeFITSPreviewRequest: {
+            /** Citation Text */
+            citation_text: string;
+            /**
+             * Mission
+             * @default Other
+             * @enum {string}
+             */
+            mission: "JWST" | "HST" | "HLSP" | "Other";
+            /**
+             * Query
+             * @default {}
+             */
+            query: {
+                [key: string]: unknown;
+            };
+            /** Retrieved At */
+            retrieved_at?: string | null;
+            /**
+             * Source Name
+             * @default MAST
+             */
+            source_name: string;
+            /**
+             * Source Url
+             * Format: uri
+             */
+            source_url: string;
+            /**
+             * Trust Tier
+             * @default Primary/Authoritative
+             */
+            trust_tier: string;
+        };
+        /** TelescopeFITSPreviewResponse */
+        TelescopeFITSPreviewResponse: {
+            /** Cache */
+            cache?: {
+                [key: string]: unknown;
+            } | null;
+            /** File Name */
+            file_name: string;
+            /** File Size Bytes */
+            file_size_bytes: number;
+            /** Fits Hdu Candidates */
+            fits_hdu_candidates: components["schemas"]["TelescopeFITSPreviewCandidate"][];
+            /** Sha256 */
+            sha256: string;
+            /** Warnings */
+            warnings: string[];
         };
         /** ValidationError */
         ValidationError: {
@@ -1029,6 +1414,243 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DatasetDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    telescope_import_fits_by_url_telescope_import_fits_by_url_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TelescopeFITSImportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatasetDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    telescope_mast_caom_products_telescope_mast_caom_products_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MastCaomProductsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    telescope_mast_caom_search_telescope_mast_caom_search_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MastCaomConeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    telescope_mast_import_fits_by_data_uri_telescope_mast_import_fits_by_data_uri_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TelescopeFITSImportByDataURIRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatasetDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    telescope_mast_name_lookup_telescope_mast_name_lookup_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MastNameLookupRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    telescope_mast_preview_fits_by_data_uri_telescope_mast_preview_fits_by_data_uri_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TelescopeFITSPreviewByDataURIRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TelescopeFITSPreviewResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    telescope_preview_fits_by_url_telescope_preview_fits_by_url_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TelescopeFITSPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TelescopeFITSPreviewResponse"];
                 };
             };
             /** @description Validation Error */

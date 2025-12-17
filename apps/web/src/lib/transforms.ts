@@ -86,6 +86,43 @@ export function convertXScalarFromCanonical(
   return convertXFromCanonical([valueCanonical], canonicalUnit, displayUnit).x[0]
 }
 
+export function convertXToCanonical(
+  xDisplay: number[],
+  canonicalUnit: string | null,
+  displayUnit: DisplayXUnit,
+): { x: number[]; unitLabel: string } {
+  const canonical = normalizeXUnit(canonicalUnit)
+  if (!canonical) {
+    throw new Error('X unit is unknown; set X unit in dataset metadata before converting.')
+  }
+
+  if (displayUnit === 'as-imported') {
+    return { x: xDisplay, unitLabel: canonical }
+  }
+
+  if (canonical === displayUnit) {
+    return { x: xDisplay, unitLabel: canonical }
+  }
+
+  const out = new Array<number>(xDisplay.length)
+  for (let i = 0; i < xDisplay.length; i++) {
+    const v = xDisplay[i]
+    // display => nm
+    const nm = mapToNm(v, displayUnit)
+    // nm => canonical
+    out[i] = mapFromNm(nm, canonical)
+  }
+  return { x: out, unitLabel: canonical }
+}
+
+export function convertXScalarToCanonical(
+  valueDisplay: number,
+  canonicalUnit: string | null,
+  displayUnit: DisplayXUnit,
+): number {
+  return convertXToCanonical([valueDisplay], canonicalUnit, displayUnit).x[0]
+}
+
 export type RangeSelection = {
   x0: number | null
   x1: number | null

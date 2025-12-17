@@ -31,11 +31,31 @@ from .datasets import (
     sha256_bytes,
 )
 from .ingest_preview import IngestPreviewResponse, build_ingest_preview, parse_delimited_xy
+from .mast_client import MastHTTPError
 from .reference_import import (
     ReferenceImportJCAMPRequest,
     ReferenceImportLineListCSVRequest,
     import_reference_jcamp_dx,
     import_reference_line_list_csv,
+)
+from .telescope_import import (
+    TelescopeFITSImportByDataURIRequest,
+    TelescopeFITSImportRequest,
+    TelescopeFITSPreviewByDataURIRequest,
+    TelescopeFITSPreviewRequest,
+    TelescopeFITSPreviewResponse,
+    import_telescope_fits_by_mast_data_uri,
+    import_telescope_fits_by_url,
+    preview_telescope_fits_by_mast_data_uri,
+    preview_telescope_fits_by_url,
+)
+from .telescope_mast import (
+    MastCaomConeRequest,
+    MastCaomProductsRequest,
+    MastNameLookupRequest,
+    mast_caom_products,
+    mast_caom_search,
+    mast_name_lookup,
 )
 from .version import read_version
 
@@ -323,6 +343,115 @@ def references_import_line_list_csv(req: ReferenceImportLineListCSVRequest) -> D
         raise HTTPException(status_code=400, detail=str(err)) from err
     except TimeoutError as err:
         raise HTTPException(status_code=504, detail=str(err)) from err
+    except Exception as err:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=str(err)) from err
+
+
+@app.post("/telescope/preview/fits-by-url", response_model=TelescopeFITSPreviewResponse)
+def telescope_preview_fits_by_url(req: TelescopeFITSPreviewRequest) -> TelescopeFITSPreviewResponse:
+    # CAP-08 MVP slice: fetch remote FITS and enumerate extraction candidates.
+    try:
+        return preview_telescope_fits_by_url(req)
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+    except TimeoutError as err:
+        raise HTTPException(status_code=504, detail=str(err)) from err
+    except Exception as err:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=str(err)) from err
+
+
+@app.post("/telescope/import/fits-by-url", response_model=DatasetDetail)
+def telescope_import_fits_by_url(req: TelescopeFITSImportRequest) -> DatasetDetail:
+    # CAP-08 MVP slice: fetch remote FITS and extract a 1D spectrum from an explicit mapping.
+    try:
+        return import_telescope_fits_by_url(req)
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+    except TimeoutError as err:
+        raise HTTPException(status_code=504, detail=str(err)) from err
+    except Exception as err:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=str(err)) from err
+
+
+@app.post("/telescope/mast/preview/fits-by-data-uri", response_model=TelescopeFITSPreviewResponse)
+def telescope_mast_preview_fits_by_data_uri(
+    req: TelescopeFITSPreviewByDataURIRequest,
+) -> TelescopeFITSPreviewResponse:
+    # CAP-08: download a MAST product (dataURI) and enumerate extraction candidates.
+    try:
+        return preview_telescope_fits_by_mast_data_uri(req)
+    except MastHTTPError as err:
+        status = err.status_code
+        if status >= 500:
+            raise HTTPException(status_code=502, detail=err.message) from err
+        raise HTTPException(status_code=status, detail=err.message) from err
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+    except TimeoutError as err:
+        raise HTTPException(status_code=504, detail=str(err)) from err
+    except Exception as err:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=str(err)) from err
+
+
+@app.post("/telescope/mast/import/fits-by-data-uri", response_model=DatasetDetail)
+def telescope_mast_import_fits_by_data_uri(
+    req: TelescopeFITSImportByDataURIRequest,
+) -> DatasetDetail:
+    # CAP-08: download a MAST product (dataURI) and import an extracted spectrum
+    # from an explicit mapping.
+    try:
+        return import_telescope_fits_by_mast_data_uri(req)
+    except MastHTTPError as err:
+        status = err.status_code
+        if status >= 500:
+            raise HTTPException(status_code=502, detail=err.message) from err
+        raise HTTPException(status_code=status, detail=err.message) from err
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+    except TimeoutError as err:
+        raise HTTPException(status_code=504, detail=str(err)) from err
+    except Exception as err:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=str(err)) from err
+
+
+@app.post("/telescope/mast/name-lookup")
+def telescope_mast_name_lookup(req: MastNameLookupRequest) -> dict:
+    # CAP-08: helper for resolving a target name into a sky position.
+    try:
+        return mast_name_lookup(req)
+    except MastHTTPError as err:
+        status = err.status_code
+        if status >= 500:
+            raise HTTPException(status_code=502, detail=err.message) from err
+        raise HTTPException(status_code=status, detail=err.message) from err
+    except Exception as err:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=str(err)) from err
+
+
+@app.post("/telescope/mast/caom-search")
+def telescope_mast_caom_search(req: MastCaomConeRequest) -> dict:
+    # CAP-08: CAOM search, optionally filtered for mission/product type.
+    try:
+        return mast_caom_search(req)
+    except MastHTTPError as err:
+        status = err.status_code
+        if status >= 500:
+            raise HTTPException(status_code=502, detail=err.message) from err
+        raise HTTPException(status_code=status, detail=err.message) from err
+    except Exception as err:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=str(err)) from err
+
+
+@app.post("/telescope/mast/caom-products")
+def telescope_mast_caom_products(req: MastCaomProductsRequest) -> dict:
+    # CAP-08: list data products for an observation group (obsid).
+    try:
+        return mast_caom_products(req)
+    except MastHTTPError as err:
+        status = err.status_code
+        if status >= 500:
+            raise HTTPException(status_code=502, detail=err.message) from err
+        raise HTTPException(status_code=status, detail=err.message) from err
     except Exception as err:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=str(err)) from err
 

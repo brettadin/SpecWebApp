@@ -5,6 +5,7 @@ import {
   baselineCorrectPolynomial,
   convertXFromCanonical,
   convertXScalarFromCanonical,
+  convertXScalarToCanonical,
   normalizeXUnit,
   normalizeY,
   savitzkyGolaySmooth,
@@ -19,12 +20,24 @@ import {
   type RatioHandling,
 } from '../lib/transforms'
 
+import { detectFeatures, type DetectedFeature, type FeatureMode } from '../lib/featureDetection'
+
 type DatasetSummary = {
   id: string
   name: string
   created_at: string
   source_file_name: string
   sha256: string
+  reference?: {
+    data_type?: string
+    source_name?: string
+    source_url?: string
+    retrieved_at?: string
+    trust_tier?: string
+    citation_present?: boolean | null
+    license_redistribution_allowed?: string
+    sharing_visibility?: string
+  } | null
 }
 
 type DatasetSeries = {
@@ -149,6 +162,66 @@ export function PlotPage() {
   const [newRangeX0, setNewRangeX0] = useState('')
   const [newRangeX1, setNewRangeX1] = useState('')
   const [newRangeText, setNewRangeText] = useState('')
+
+  const [featureBusy, setFeatureBusy] = useState(false)
+  const [featureError, setFeatureError] = useState<string | null>(null)
+  const [featureTraceKeys, setFeatureTraceKeys] = useState<string[]>([])
+  const [featureMode, setFeatureMode] = useState<FeatureMode>('peaks')
+  const [featureProminence, setFeatureProminence] = useState('')
+  const [featureMinSeparation, setFeatureMinSeparation] = useState('')
+  const [featureResults, setFeatureResults] = useState<
+    Array<
+      DetectedFeature & {
+        trace_key: string
+        trace_name: string
+        trace_kind: 'original' | 'derived'
+        dataset_id_for_annotation: string | null
+        created_at: string
+        x_unit_display: string
+        parameters: { mode: FeatureMode; min_prominence: number | null; min_separation_x: number | null }
+      }
+    >
+  >([])
+  const [selectedFeatureIds, setSelectedFeatureIds] = useState<string[]>([])
+  const [highlightedFeatureRowId, setHighlightedFeatureRowId] = useState<string | null>(null)
+
+  const [matchBusy, setMatchBusy] = useState(false)
+  const [matchError, setMatchError] = useState<string | null>(null)
+  const [matchReferenceType, setMatchReferenceType] = useState<'line-list' | 'band-ranges'>('line-list')
+  const [matchReferenceDatasetId, setMatchReferenceDatasetId] = useState('')
+  const [matchTolerance, setMatchTolerance] = useState('')
+  const [matchReferenceInfo, setMatchReferenceInfo] = useState<
+    | {
+        source_name: string | null
+        source_url: string | null
+        retrieved_at: string | null
+        citation_text: string | null
+        data_type: string | null
+      }
+    | null
+  >(null)
+  const [matchResults, setMatchResults] = useState<
+    Array<{
+      feature_row_id: string
+      feature_center_x_display: number
+      dataset_id_for_annotation: string | null
+      trace_name: string
+      candidates: Array<{
+        kind: 'line' | 'band'
+        label: string
+        score: number
+        // Optional fields used by specific matching modes.
+        x_ref_display?: number
+        x_ref_canonical?: number
+        strength?: number | null
+        delta_display?: number
+        range_x0_display?: number
+        range_x1_display?: number
+        range_x0_canonical?: number
+        range_x1_canonical?: number
+      }>
+    }>
+  >([])
 
   const visibleDatasetIds = useMemo(
     () => traceStates.filter((t) => t.visible).map((t) => t.datasetId),
@@ -289,6 +362,46 @@ export function PlotPage() {
     return displayXUnit
   }, [displayXUnit, unitHints.x])
 
+  const featureTraceOptions = useMemo(() => {
+    const originals = visibleDatasetIds.map((id) => ({
+      key: `o:${id}`,
+      label: `Original: ${datasetsById.get(id)?.name ?? id}`,
+    }))
+    const derived = derivedTraces
+      .filter((t) => t.visible)
+      .map((t) => ({ key: `d:${t.traceId}`, label: `Derived: ${t.name}` }))
+    return [...originals, ...derived]
+  }, [datasetsById, derivedTraces, visibleDatasetIds])
+
+  const matchReferenceOptions = useMemo(() => {
+    return datasets
+      .filter((d) => d.reference?.data_type === 'LineList')
+      .map((d) => ({ id: d.id, label: d.name || d.id }))
+  }, [datasets])
+
+  const matchBandRangeOptions = useMemo(() => {
+    return datasets.map((d) => ({ id: d.id, label: d.name || d.id }))
+  }, [datasets])
+
+  const selectedMatchResult = useMemo(() => {
+    if (!highlightedFeatureRowId) return null
+    return matchResults.find((m) => m.feature_row_id === highlightedFeatureRowId) ?? null
+  }, [highlightedFeatureRowId, matchResults])
+
+  useEffect(() => {
+    // CAP-09: default to all visible traces; keep selection valid as the plot changes.
+    if (!featureTraceOptions.length) {
+      setFeatureTraceKeys([])
+      return
+    }
+    setFeatureTraceKeys((prev) => {
+      const allowed = new Set(featureTraceOptions.map((t) => t.key))
+      const kept = prev.filter((k) => allowed.has(k))
+      if (kept.length) return kept
+      return featureTraceOptions.map((t) => t.key)
+    })
+  }, [featureTraceOptions])
+
   const plotData = useMemo<PlotParams['data']>(() => {
     const xUnit = xUnitLabel
     const yUnit = formatUnit(unitHints.y)
@@ -351,7 +464,54 @@ export function PlotPage() {
         }
       })
 
-    if (!showAnnotations) return [...traces, ...derived]
+    const featureTraces = (() => {
+      if (!featureResults.length) return []
+
+      const byTrace = new Map<string, typeof featureResults>()
+      for (const f of featureResults) {
+        const k = f.trace_key
+        const prev = byTrace.get(k) ?? []
+        prev.push(f)
+        byTrace.set(k, prev)
+      }
+
+      const out: Array<Record<string, unknown>> = []
+      for (const feats of byTrace.values()) {
+        const traceName = feats[0]?.trace_name ?? 'trace'
+        out.push({
+          type: 'scatter',
+          mode: 'markers',
+          name: `${traceName} (features)`,
+          x: feats.map((f) => f.center_x),
+          y: feats.map((f) => f.value_y),
+          marker: { size: 9, symbol: featureMode === 'dips' ? 'triangle-down' : 'triangle-up' },
+          text: feats.map((f) => {
+            const p = typeof f.prominence === 'number' ? `prom=${f.prominence.toFixed(3)}` : 'prom=?'
+            const w = typeof f.width === 'number' ? `width=${f.width.toFixed(3)}` : 'width=?'
+            return `${p}, ${w}`
+          }),
+          hovertemplate: `${traceName} (feature)<br>x=%{x} ${xUnit}<br>y=%{y} ${yUnit}<br>%{text}<extra></extra>`,
+        })
+      }
+
+      if (highlightedFeatureRowId) {
+        const selected = featureResults.find((f) => featureRowId(f) === highlightedFeatureRowId)
+        if (selected) {
+          out.push({
+            type: 'scatter',
+            mode: 'markers',
+            name: `${selected.trace_name} (selected feature)`,
+            x: [selected.center_x],
+            y: [selected.value_y],
+            marker: { size: 14, symbol: 'circle-open', line: { width: 2 } },
+            hovertemplate: `${selected.trace_name} (selected)<br>x=%{x} ${xUnit}<br>y=%{y} ${yUnit}<extra></extra>`,
+          })
+        }
+      }
+      return out
+    })()
+
+    if (!showAnnotations) return [...traces, ...derived, ...featureTraces]
 
     const noteTraces = activeSeries
       .map((t) => {
@@ -376,8 +536,8 @@ export function PlotPage() {
       })
       .filter((v): v is NonNullable<typeof v> => v != null)
 
-    return [...traces, ...derived, ...noteTraces]
-  }, [activeSeries, annotationsByDatasetId, derivedTraces, displayXUnit, showAnnotations, unitHints.x, unitHints.y, xUnitLabel])
+    return [...traces, ...derived, ...noteTraces, ...featureTraces]
+  }, [activeSeries, annotationsByDatasetId, derivedTraces, displayXUnit, featureMode, featureResults, highlightedFeatureRowId, showAnnotations, unitHints.x, unitHints.y, xUnitLabel])
 
   const plotLayout = useMemo<PlotParams['layout']>(() => {
     const shapes: NonNullable<PlotParams['layout']>['shapes'] = []
@@ -452,6 +612,24 @@ export function PlotPage() {
       setDisplayXUnit('as-imported')
     }
   }, [displayXUnit, xUnitIsKnown])
+
+  useEffect(() => {
+    // CAP-09: feature detection is unit-sensitive; clear results if display units change.
+    setFeatureResults([])
+    setSelectedFeatureIds([])
+    setFeatureError(null)
+    setHighlightedFeatureRowId(null)
+    setMatchResults([])
+    setMatchError(null)
+  }, [displayXUnit])
+
+  useEffect(() => {
+    if (!highlightedFeatureRowId) return
+    const allowed = new Set(featureResults.map((f) => featureRowId(f)))
+    if (!allowed.has(highlightedFeatureRowId)) {
+      setHighlightedFeatureRowId(null)
+    }
+  }, [featureResults, highlightedFeatureRowId])
 
   function clearLastDerived() {
     setDerivedTraces((prev) => prev.slice(0, -1))
@@ -736,6 +914,473 @@ export function PlotPage() {
       return { id: t.traceId, name: t.name, x: t.x, y: t.y, x_unit: t.x_unit, y_unit: t.y_unit }
     }
     throw new Error('Unknown trace key.')
+  }
+
+  async function resolveTraceForFeatureFinder(key: string): Promise<{
+    trace_key: string
+    trace_name: string
+    trace_kind: 'original' | 'derived'
+    dataset_id_for_annotation: string | null
+    x_display: number[]
+    y: number[]
+    canonical_x_unit: string | null
+    y_unit: string | null
+  }> {
+    if (key.startsWith('o:')) {
+      const datasetId = key.slice(2)
+      const s = await ensureSeriesLoaded(datasetId)
+      const traceName = datasetsById.get(datasetId)?.name ?? datasetId
+      const x_display = convertXFromCanonical(s.x, s.x_unit, displayXUnit).x
+      return {
+        trace_key: key,
+        trace_name: traceName,
+        trace_kind: 'original',
+        dataset_id_for_annotation: datasetId,
+        x_display,
+        y: s.y,
+        canonical_x_unit: s.x_unit,
+        y_unit: s.y_unit,
+      }
+    }
+
+    if (key.startsWith('d:')) {
+      const traceId = key.slice(2)
+      const t = derivedTraces.find((d) => d.traceId === traceId)
+      if (!t) throw new Error('Derived trace not found.')
+      const x_display = convertXFromCanonical(t.x, t.x_unit, displayXUnit).x
+      return {
+        trace_key: key,
+        trace_name: t.name,
+        trace_kind: 'derived',
+        dataset_id_for_annotation: t.parentDatasetId,
+        x_display,
+        y: t.y,
+        canonical_x_unit: t.x_unit,
+        y_unit: t.y_unit,
+      }
+    }
+
+    throw new Error('Unknown trace key.')
+  }
+
+  function featureRowId(f: { trace_key: string; feature_id: string }) {
+    return `${f.trace_key}:${f.feature_id}`
+  }
+
+  function lowerBoundSorted(values: number[], target: number): number {
+    let lo = 0
+    let hi = values.length
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1
+      if (values[mid] < target) lo = mid + 1
+      else hi = mid
+    }
+    return lo
+  }
+
+  function upperBoundSorted(values: number[], target: number): number {
+    let lo = 0
+    let hi = values.length
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1
+      if (values[mid] <= target) lo = mid + 1
+      else hi = mid
+    }
+    return lo
+  }
+
+  async function onRunFeatureFinder() {
+    setFeatureError(null)
+    setSelectedFeatureIds([])
+    setFeatureResults([])
+    setHighlightedFeatureRowId(null)
+
+    if (!featureTraceKeys.length) return
+
+    const minProm = featureProminence.trim() === '' ? null : Number(featureProminence)
+    if (minProm != null && !Number.isFinite(minProm)) {
+      setFeatureError('Prominence must be a number.')
+      return
+    }
+
+    const minSep = featureMinSeparation.trim() === '' ? null : Number(featureMinSeparation)
+    if (minSep != null && !Number.isFinite(minSep)) {
+      setFeatureError('Minimum separation must be a number.')
+      return
+    }
+
+    setFeatureBusy(true)
+    try {
+      const createdAt = nowIso()
+      const xUnitDisplay = xUnitLabel
+      const out: typeof featureResults = []
+
+      for (const key of featureTraceKeys) {
+        const t = await resolveTraceForFeatureFinder(key)
+        const feats = detectFeatures(t.x_display, t.y, {
+          mode: featureMode,
+          minProminence: minProm,
+          minSeparationX: minSep,
+          maxCount: 200,
+        })
+
+        for (const f of feats) {
+          out.push({
+            ...f,
+            trace_key: t.trace_key,
+            trace_name: t.trace_name,
+            trace_kind: t.trace_kind,
+            dataset_id_for_annotation: t.dataset_id_for_annotation,
+            created_at: createdAt,
+            x_unit_display: xUnitDisplay,
+            parameters: { mode: featureMode, min_prominence: minProm, min_separation_x: minSep },
+          })
+        }
+      }
+
+      setFeatureResults(out)
+      setMatchResults([])
+      setMatchError(null)
+      if (out.length > 250) {
+        setFeatureError('Too many features detected; increase prominence or minimum separation.')
+      } else if (!out.length) {
+        setFeatureError('No features found; try lowering prominence or selecting a narrower range.')
+      }
+    } catch (e) {
+      setFeatureError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setFeatureBusy(false)
+    }
+  }
+
+  async function onConvertSelectedFeaturesToAnnotations() {
+    if (!selectedFeatureIds.length) return
+
+    setError(null)
+    setFeatureError(null)
+    try {
+      const selected = featureResults.filter((f) => selectedFeatureIds.includes(featureRowId(f)))
+      for (const f of selected) {
+        const datasetId = f.dataset_id_for_annotation
+        if (!datasetId) continue
+
+        const canonicalUnit = (await ensureSeriesLoaded(datasetId)).x_unit
+        const xCanonical = convertXScalarToCanonical(f.center_x, canonicalUnit, displayXUnit)
+
+        const minProm = f.parameters.min_prominence
+        const minSep = f.parameters.min_separation_x
+        const promLabel = typeof minProm === 'number' ? `prom≥${minProm}` : 'prom=default'
+        const sepLabel = typeof minSep === 'number' ? `sep≥${minSep} ${xUnitLabel}` : `sep=default (${xUnitLabel})`
+        const kind = f.parameters.mode === 'dips' ? 'dip' : 'peak'
+
+        const text = `Candidate: ${kind} (CAP-09; ${promLabel}; ${sepLabel}; trace=${f.trace_name})`
+
+        const res = await fetch(`${API_BASE}/datasets/${encodeURIComponent(datasetId)}/annotations/point`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text, x: xCanonical, y: f.value_y }),
+        })
+        if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`)
+        await refreshAnnotations(datasetId)
+      }
+
+      setShowAnnotations(true)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  async function onRunMatch() {
+    setMatchError(null)
+    setMatchResults([])
+    setMatchReferenceInfo(null)
+
+    const tol = matchReferenceType === 'line-list' ? (matchTolerance.trim() === '' ? null : Number(matchTolerance)) : null
+    if (matchReferenceType === 'line-list' && (tol == null || !Number.isFinite(tol) || tol <= 0)) {
+      setMatchError(`Tolerance must be a positive number (${xUnitLabel}).`)
+      return
+    }
+
+    if (!matchReferenceDatasetId) return
+
+    const toMatch = selectedFeatureIds.length
+      ? featureResults.filter((f) => selectedFeatureIds.includes(featureRowId(f)))
+      : featureResults
+
+    if (!toMatch.length) {
+      setMatchError('No features selected/found to match.')
+      return
+    }
+
+    setMatchBusy(true)
+    try {
+      const ref = await ensureSeriesLoaded(matchReferenceDatasetId)
+      const refCanonical = normalizeXUnit(ref.x_unit)
+      if (!refCanonical) {
+        throw new Error('Reference dataset has unknown X units; fix metadata before matching.')
+      }
+
+      setMatchReferenceInfo({
+        source_name: ref.reference?.source_name ?? null,
+        source_url: ref.reference?.source_url ?? null,
+        retrieved_at: ref.reference?.retrieved_at ?? null,
+        citation_text: ref.reference?.citation_text ?? null,
+        data_type: ref.reference?.data_type ?? null,
+      })
+
+      const out: typeof matchResults = []
+      const mismatch: string[] = []
+
+      if (matchReferenceType === 'band-ranges') {
+        const annRes = await fetch(`${API_BASE}/datasets/${encodeURIComponent(matchReferenceDatasetId)}/annotations`)
+        if (!annRes.ok) throw new Error((await annRes.text()) || `HTTP ${annRes.status}`)
+        const anns = (await annRes.json()) as Annotation[]
+        const ranges = anns.filter((a) => a.type === 'range_x' && a.x0 != null && a.x1 != null)
+        if (!ranges.length) {
+          throw new Error('Selected reference dataset has no range annotations to use as band/range references.')
+        }
+
+        for (const f of toMatch) {
+          if (!Number.isFinite(f.center_x)) continue
+          if (!f.dataset_id_for_annotation) continue
+
+          const featureSeries = await ensureSeriesLoaded(f.dataset_id_for_annotation)
+          const featureCanonical = normalizeXUnit(featureSeries.x_unit)
+          if (!featureCanonical) {
+            mismatch.push(`${f.trace_name}: unknown X unit`)
+            continue
+          }
+
+          if (displayXUnit === 'as-imported' && featureCanonical !== refCanonical) {
+            mismatch.push(`${f.trace_name}: ${featureCanonical} vs ${refCanonical}`)
+            continue
+          }
+
+          const xFeatureCanonicalInRef = convertXScalarToCanonical(f.center_x, ref.x_unit, displayXUnit)
+
+          const candidates = ranges
+            .filter((r) => {
+              const x0 = r.x0 as number
+              const x1 = r.x1 as number
+              return xFeatureCanonicalInRef >= x0 && xFeatureCanonicalInRef <= x1
+            })
+            .map((r) => {
+              const x0C = r.x0 as number
+              const x1C = r.x1 as number
+              const x0D = convertXScalarFromCanonical(x0C, ref.x_unit, displayXUnit)
+              const x1D = convertXScalarFromCanonical(x1C, ref.x_unit, displayXUnit)
+              const lo = Math.min(x0D, x1D)
+              const hi = Math.max(x0D, x1D)
+              const mid = 0.5 * (lo + hi)
+              const half = Math.max(hi - lo, 0) / 2
+              const dist = Math.abs(f.center_x - mid)
+              const score = half > 0 ? Math.max(0, 1 - dist / half) : 1
+              const bandName = String(r.text ?? '').trim() || '(unnamed band)'
+              const label = `Band: ${bandName} [${lo.toFixed(6)}–${hi.toFixed(6)} ${xUnitLabel}]`
+              return {
+                kind: 'band' as const,
+                label,
+                score,
+                range_x0_display: lo,
+                range_x1_display: hi,
+                range_x0_canonical: Math.min(x0C, x1C),
+                range_x1_canonical: Math.max(x0C, x1C),
+              }
+            })
+            .sort((a, b) => b.score - a.score)
+
+          out.push({
+            feature_row_id: featureRowId(f),
+            feature_center_x_display: f.center_x,
+            dataset_id_for_annotation: f.dataset_id_for_annotation,
+            trace_name: f.trace_name,
+            candidates: candidates.slice(0, 10),
+          })
+        }
+
+        if (mismatch.length) {
+          setMatchError(
+            `Some features were skipped due to unit mismatch in as-imported mode: ${mismatch.slice(0, 5).join('; ')}${
+              mismatch.length > 5 ? '…' : ''
+            }`,
+          )
+        }
+
+        setMatchResults(out)
+        if (!out.length) {
+          setMatchError('No matches found; ensure your reference ranges overlap the detected feature positions.')
+        }
+        return
+      }
+
+      // line-list matching
+      if (ref.reference?.data_type !== 'LineList') {
+        throw new Error('Selected reference dataset is not a line list.')
+      }
+      if (tol == null) {
+        throw new Error('Tolerance is required for line list matching.')
+      }
+
+      for (const f of toMatch) {
+        if (!Number.isFinite(f.center_x)) continue
+        if (!f.dataset_id_for_annotation) continue
+
+        const featureSeries = await ensureSeriesLoaded(f.dataset_id_for_annotation)
+        const featureCanonical = normalizeXUnit(featureSeries.x_unit)
+        if (!featureCanonical) {
+          mismatch.push(`${f.trace_name}: unknown X unit`)
+          continue
+        }
+
+        // In as-imported mode we cannot safely compare across differing unit conventions.
+        if (displayXUnit === 'as-imported' && featureCanonical !== refCanonical) {
+          mismatch.push(`${f.trace_name}: ${featureCanonical} vs ${refCanonical}`)
+          continue
+        }
+
+        const x0Display = f.center_x - tol
+        const x1Display = f.center_x + tol
+
+        // Convert the tolerance window endpoints into the reference's canonical unit
+        // (the reference X array is sorted in its canonical unit).
+        const loC = convertXScalarToCanonical(Math.min(x0Display, x1Display), ref.x_unit, displayXUnit)
+        const hiC = convertXScalarToCanonical(Math.max(x0Display, x1Display), ref.x_unit, displayXUnit)
+
+        const start = lowerBoundSorted(ref.x, loC)
+        const endExclusive = upperBoundSorted(ref.x, hiC)
+
+        const candidates: Array<{
+          kind: 'line'
+          label: string
+          score: number
+          x_ref_display: number
+          x_ref_canonical: number
+          strength: number | null
+          delta_display: number
+        }> = []
+
+        for (let i = start; i < endExclusive; i++) {
+          const xRefCanonical = ref.x[i]
+          const xRefDisplay = convertXScalarFromCanonical(xRefCanonical, ref.x_unit, displayXUnit)
+          const deltaSigned = xRefDisplay - f.center_x
+          const deltaAbs = Math.abs(deltaSigned)
+          if (deltaAbs > tol) continue
+
+          const strength = typeof ref.y?.[i] === 'number' && Number.isFinite(ref.y[i]) ? ref.y[i] : null
+          const score = Math.max(0, 1 - deltaAbs / tol)
+          const deltaLabel = `${deltaSigned >= 0 ? '+' : ''}${deltaSigned.toFixed(6)} ${xUnitLabel}`
+          const strengthLabel = strength != null ? `; strength=${strength.toFixed(3)}` : ''
+          const label = `Line @ ${xRefDisplay.toFixed(6)} ${xUnitLabel} (Δ=${deltaLabel}${strengthLabel})`
+          candidates.push({
+            kind: 'line',
+            label,
+            score,
+            x_ref_display: xRefDisplay,
+            x_ref_canonical: xRefCanonical,
+            strength,
+            delta_display: deltaAbs,
+          })
+        }
+
+        candidates.sort((a, b) => {
+          if (b.score !== a.score) return b.score - a.score
+          const bs = b.strength ?? -Infinity
+          const as = a.strength ?? -Infinity
+          return bs - as
+        })
+
+        out.push({
+          feature_row_id: featureRowId(f),
+          feature_center_x_display: f.center_x,
+          dataset_id_for_annotation: f.dataset_id_for_annotation,
+          trace_name: f.trace_name,
+          candidates: candidates.slice(0, 10),
+        })
+      }
+
+      if (mismatch.length) {
+        setMatchError(
+          `Some features were skipped due to unit mismatch in as-imported mode: ${mismatch.slice(0, 5).join('; ')}${
+            mismatch.length > 5 ? '…' : ''
+          }`,
+        )
+      }
+
+      setMatchResults(out)
+      if (!out.length) {
+        setMatchError('No matches found; try increasing tolerance or choose another line list.')
+      }
+    } catch (e) {
+      setMatchError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setMatchBusy(false)
+    }
+  }
+
+  async function onApplyTopMatchesToAnnotations() {
+    if (!matchResults.length) return
+    if (!matchReferenceDatasetId) return
+
+    setError(null)
+    setMatchError(null)
+    try {
+      const ref = await ensureSeriesLoaded(matchReferenceDatasetId)
+      const srcName = ref.reference?.source_name ?? 'Unknown'
+      const srcUrl = ref.reference?.source_url
+      const retrievedAt = ref.reference?.retrieved_at
+      const cite = ref.reference?.citation_text
+
+      const tol = matchReferenceType === 'line-list' ? (matchTolerance.trim() === '' ? null : Number(matchTolerance)) : null
+      if (matchReferenceType === 'line-list' && (tol == null || !Number.isFinite(tol) || tol <= 0)) {
+        throw new Error('Tolerance must be set before applying line-list match labels.')
+      }
+
+      for (const m of matchResults) {
+        if (!m.dataset_id_for_annotation) continue
+        const top = m.candidates[0]
+        if (!top) continue
+
+        const canonicalUnit = (await ensureSeriesLoaded(m.dataset_id_for_annotation)).x_unit
+        const xCanonical = convertXScalarToCanonical(m.feature_center_x_display, canonicalUnit, displayXUnit)
+
+        const dxLabel = tol != null ? `Δx=±${tol} ${xUnitLabel}` : null
+        const sourceLabel = srcUrl ? `${srcName} (${srcUrl})` : srcName
+        const retrievedLabel = retrievedAt ? `retrieved=${retrievedAt}` : null
+
+        // Keep UI labels rich, but persist a compact label in annotations.
+        const compactCandidateLabel =
+          top.kind === 'line'
+            ? `Line @ ${top.x_ref_display.toFixed(6)} ${xUnitLabel}`
+            : top.label
+
+        const matchLabel = `Candidate: ${compactCandidateLabel}`
+        const metaBits = [
+          'CAP-09',
+          dxLabel,
+          `source=${sourceLabel}`,
+          retrievedLabel,
+          `trace=${m.trace_name}`,
+        ].filter((v): v is string => typeof v === 'string' && v.trim().length > 0)
+
+        const pieces = [matchLabel, `(${metaBits.join('; ')})`]
+        if (cite && String(cite).trim()) {
+          pieces.push(`Cite: ${String(cite).trim()}`)
+        }
+        const text = pieces.join(' ')
+
+        const res = await fetch(`${API_BASE}/datasets/${encodeURIComponent(m.dataset_id_for_annotation)}/annotations/point`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text, x: xCanonical, y: null }),
+        })
+        if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`)
+        await refreshAnnotations(m.dataset_id_for_annotation)
+      }
+
+      setShowAnnotations(true)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
   }
 
   async function onSwapDiff() {
@@ -1255,6 +1900,420 @@ export function PlotPage() {
                   Compute
                 </button>
               </div>
+            </div>
+          </div>
+
+          <div style={{ marginTop: '0.75rem', borderTop: '1px solid #e5e7eb', paddingTop: '0.75rem' }}>
+            <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Feature Finder (CAP-09)</div>
+            <div style={{ fontSize: '0.9rem', opacity: 0.9 }}>
+              Runs on the selected trace(s) exactly as displayed (mode: {featureMode}, x unit: {xUnitLabel}).
+            </div>
+
+            {featureError ? (
+              <div style={{ border: '1px solid #e5e7eb', padding: '0.5rem', marginTop: '0.5rem' }}>
+                <p style={{ color: 'crimson', margin: 0 }}>{featureError}</p>
+              </div>
+            ) : null}
+
+            <div style={{ display: 'grid', gap: '0.5rem', marginTop: '0.5rem' }}>
+              <div>
+                <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Trace(s)</label>
+                <select
+                  aria-label="Feature traces"
+                  multiple
+                  value={featureTraceKeys}
+                  onChange={(e) =>
+                    setFeatureTraceKeys(Array.from(e.target.selectedOptions).map((o) => (o as HTMLOptionElement).value))
+                  }
+                  style={{ width: '100%', minHeight: 72 }}
+                  disabled={!featureTraceOptions.length}
+                >
+                  {featureTraceOptions.map((t) => (
+                    <option key={t.key} value={t.key}>
+                      {t.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Mode</label>
+                <select
+                  aria-label="Feature mode"
+                  value={featureMode}
+                  onChange={(e) => setFeatureMode(e.target.value as FeatureMode)}
+                  style={{ width: '100%' }}
+                >
+                  <option value="peaks">Peaks (maxima)</option>
+                  <option value="dips">Dips (minima)</option>
+                </select>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Prominence ≥</label>
+                  <input
+                    aria-label="Feature prominence"
+                    placeholder="(optional)"
+                    value={featureProminence}
+                    onChange={(e) => setFeatureProminence(e.target.value)}
+                    style={{ width: '100%' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Min separation</label>
+                  <input
+                    aria-label="Feature min separation"
+                    placeholder={`(${xUnitLabel})`}
+                    value={featureMinSeparation}
+                    onChange={(e) => setFeatureMinSeparation(e.target.value)}
+                    style={{ width: '100%' }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <button type="button" onClick={onRunFeatureFinder} disabled={featureBusy || !featureTraceKeys.length} style={{ cursor: 'pointer' }}>
+                  {featureBusy ? 'Finding…' : 'Run'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFeatureResults([])
+                    setSelectedFeatureIds([])
+                    setFeatureError(null)
+                    setHighlightedFeatureRowId(null)
+                    setMatchResults([])
+                    setMatchError(null)
+                  }}
+                  disabled={featureBusy || (!featureResults.length && !featureError)}
+                  style={{ cursor: 'pointer' }}
+                >
+                  Clear
+                </button>
+              </div>
+
+              {featureResults.length ? (
+                <div style={{ marginTop: '0.25rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem', alignItems: 'center' }}>
+                    <div style={{ fontWeight: 700 }}>Results ({featureResults.length})</div>
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedFeatureIds(featureResults.map((f) => `${f.trace_key}:${f.feature_id}`))}
+                        style={{ cursor: 'pointer' }}
+                      >
+                        Select all
+                      </button>
+                      <button type="button" onClick={() => setSelectedFeatureIds([])} style={{ cursor: 'pointer' }}>
+                        Select none
+                      </button>
+                    </div>
+                  </div>
+
+                  <div style={{ marginTop: '0.25rem', maxHeight: 180, overflow: 'auto', border: '1px solid #e5e7eb' }}>
+                    <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+                      <thead>
+                        <tr>
+                          <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>Use</th>
+                          <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>x</th>
+                          <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>prom</th>
+                          <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>trace</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {featureResults.map((f) => {
+                          const id = `${f.trace_key}:${f.feature_id}`
+                          const checked = selectedFeatureIds.includes(id)
+                          const highlighted = highlightedFeatureRowId === id
+                          return (
+                            <tr
+                              key={id}
+                              onClick={() => setHighlightedFeatureRowId((prev) => (prev === id ? null : id))}
+                              style={{ cursor: 'pointer', background: highlighted ? '#f3f4f6' : undefined }}
+                            >
+                              <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>
+                                <input
+                                  type="checkbox"
+                                  onClick={(e) => e.stopPropagation()}
+                                  checked={checked}
+                                  onChange={(e) => {
+                                    const next = e.target.checked
+                                    setSelectedFeatureIds((prev) =>
+                                      next ? [...prev, id] : prev.filter((x) => x !== id),
+                                    )
+                                  }}
+                                />
+                              </td>
+                              <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>
+                                {Number.isFinite(f.center_x) ? f.center_x.toFixed(6) : ''}
+                              </td>
+                              <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>
+                                {typeof f.prominence === 'number' ? f.prominence.toFixed(3) : ''}
+                              </td>
+                              <td title={f.trace_name} style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>
+                                {f.trace_kind === 'derived' ? 'derived' : 'original'}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={onConvertSelectedFeaturesToAnnotations}
+                    disabled={!selectedFeatureIds.length}
+                    style={{ marginTop: '0.5rem', cursor: 'pointer' }}
+                  >
+                    Convert selected to annotations
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+          <div style={{ marginTop: '0.75rem', borderTop: '1px solid #e5e7eb', paddingTop: '0.75rem' }}>
+            <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Match (CAP-09)</div>
+            <div style={{ fontSize: '0.9rem', opacity: 0.9 }}>
+              Matches features to a reference: line lists (tolerance window) or band/range intervals.
+            </div>
+
+            {matchError ? (
+              <div style={{ border: '1px solid #e5e7eb', padding: '0.5rem', marginTop: '0.5rem' }}>
+                <p style={{ color: 'crimson', margin: 0 }}>{matchError}</p>
+              </div>
+            ) : null}
+
+            <div style={{ display: 'grid', gap: '0.5rem', marginTop: '0.5rem' }}>
+              <div>
+                <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Reference type</label>
+                <select
+                  aria-label="Match reference type"
+                  value={matchReferenceType}
+                  onChange={(e) => {
+                    const next = e.target.value as 'line-list' | 'band-ranges'
+                    setMatchReferenceType(next)
+                    setMatchResults([])
+                    setMatchError(null)
+                    setMatchReferenceDatasetId('')
+                    setMatchReferenceInfo(null)
+                  }}
+                  style={{ width: '100%' }}
+                >
+                  <option value="line-list">Line list</option>
+                  <option value="band-ranges">Band/range (from range annotations)</option>
+                </select>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Reference dataset</label>
+                <select
+                  aria-label="Match reference dataset"
+                  value={matchReferenceDatasetId}
+                  onChange={(e) => {
+                    setMatchReferenceDatasetId(e.target.value)
+                    setMatchReferenceInfo(null)
+                    setMatchResults([])
+                    setMatchError(null)
+                  }}
+                  style={{ width: '100%' }}
+                  disabled={matchReferenceType === 'line-list' ? !matchReferenceOptions.length : !matchBandRangeOptions.length}
+                >
+                  <option value="">(select a reference)</option>
+                  {(matchReferenceType === 'line-list' ? matchReferenceOptions : matchBandRangeOptions).map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {matchReferenceType === 'line-list' ? (
+                <div>
+                  <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Tolerance (±)</label>
+                  <input
+                    aria-label="Match tolerance"
+                    placeholder={`(${xUnitLabel})`}
+                    value={matchTolerance}
+                    onChange={(e) => setMatchTolerance(e.target.value)}
+                    style={{ width: '100%' }}
+                  />
+                </div>
+              ) : null}
+
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={onRunMatch}
+                  disabled={matchBusy || !matchReferenceDatasetId || !featureResults.length || (matchReferenceType === 'line-list' && !matchTolerance.trim())}
+                  style={{ cursor: 'pointer' }}
+                >
+                  {matchBusy ? 'Matching…' : 'Run match'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMatchResults([])
+                    setMatchError(null)
+                  }}
+                  disabled={matchBusy || (!matchResults.length && !matchError)}
+                  style={{ cursor: 'pointer' }}
+                >
+                  Clear
+                </button>
+              </div>
+
+              {matchResults.length ? (
+                <div style={{ marginTop: '0.25rem' }}>
+                  <div style={{ fontWeight: 700 }}>Results ({matchResults.length})</div>
+                  <div style={{ fontSize: '0.85rem', opacity: 0.9 }}>
+                    Using {selectedFeatureIds.length ? 'selected features' : 'all detected features'};{' '}
+                    {matchReferenceType === 'line-list'
+                      ? 'window = [x−Δx, x+Δx].'
+                      : 'match = feature center inside a reference interval.'}
+                  </div>
+
+                  {matchReferenceInfo ? (
+                    <div style={{ marginTop: '0.25rem', fontSize: '0.85rem', opacity: 0.9 }}>
+                      <div>
+                        Reference: <strong>{matchReferenceInfo.source_name ?? 'Unknown'}</strong>
+                        {matchReferenceInfo.data_type ? ` (${matchReferenceInfo.data_type})` : ''}
+                      </div>
+                      {matchReferenceInfo.source_url ? (
+                        <div>
+                          URL:{' '}
+                          <a href={matchReferenceInfo.source_url} target="_blank" rel="noreferrer">
+                            {matchReferenceInfo.source_url}
+                          </a>
+                        </div>
+                      ) : null}
+                      {matchReferenceInfo.retrieved_at ? <div>Retrieved: {matchReferenceInfo.retrieved_at}</div> : null}
+                      {matchReferenceInfo.citation_text ? <div>Citation: {matchReferenceInfo.citation_text}</div> : null}
+                    </div>
+                  ) : null}
+
+                  <div style={{ marginTop: '0.25rem', maxHeight: 200, overflow: 'auto', border: '1px solid #e5e7eb' }}>
+                    <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+                      <thead>
+                        <tr>
+                          <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>x</th>
+                          <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>top candidate</th>
+                          <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>score</th>
+                          <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>cands</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {matchResults.map((m) => {
+                          const top = m.candidates[0]
+                          const highlighted = highlightedFeatureRowId === m.feature_row_id
+                          return (
+                            <tr
+                              key={m.feature_row_id}
+                              onClick={() => setHighlightedFeatureRowId((prev) => (prev === m.feature_row_id ? null : m.feature_row_id))}
+                              style={{ cursor: 'pointer', background: highlighted ? '#f3f4f6' : undefined }}
+                            >
+                              <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>
+                                {Number.isFinite(m.feature_center_x_display) ? m.feature_center_x_display.toFixed(6) : ''}
+                              </td>
+                              <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>
+                                {top ? top.label : '(none)'}
+                              </td>
+                              <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>
+                                {top ? top.score.toFixed(3) : ''}
+                              </td>
+                              <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>
+                                {m.candidates.length}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {selectedMatchResult ? (
+                    <div style={{ marginTop: '0.5rem', border: '1px solid #e5e7eb', padding: '0.5rem' }}>
+                      <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Scoring breakdown</div>
+                      <div style={{ fontSize: '0.85rem', opacity: 0.9 }}>
+                        Feature x: <strong>{selectedMatchResult.feature_center_x_display.toFixed(6)}</strong> {xUnitLabel}
+                      </div>
+
+                      {matchReferenceType === 'line-list' ? (
+                        <div style={{ fontSize: '0.85rem', opacity: 0.9, marginTop: '0.25rem' }}>
+                          Score: <code>1 − |Δ|/Δx</code> (clamped to [0,1])
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: '0.85rem', opacity: 0.9, marginTop: '0.25rem' }}>
+                          Score: closeness to interval midpoint (normalized by half-width)
+                        </div>
+                      )}
+
+                      <div style={{ marginTop: '0.5rem', maxHeight: 220, overflow: 'auto' }}>
+                        <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+                          <thead>
+                            {matchReferenceType === 'line-list' ? (
+                              <tr>
+                                <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>candidate</th>
+                                <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>x_ref</th>
+                                <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>Δ</th>
+                                <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>score</th>
+                                <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>strength</th>
+                              </tr>
+                            ) : (
+                              <tr>
+                                <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>band</th>
+                                <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>range</th>
+                                <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>score</th>
+                              </tr>
+                            )}
+                          </thead>
+                          <tbody>
+                            {selectedMatchResult.candidates.slice(0, 5).map((c, idx) => {
+                              if (matchReferenceType === 'line-list') {
+                                const xRef = typeof c.x_ref_display === 'number' ? c.x_ref_display.toFixed(6) : ''
+                                const dx = typeof c.delta_display === 'number' ? c.delta_display.toFixed(6) : ''
+                                const strength = typeof c.strength === 'number' ? c.strength.toFixed(3) : ''
+                                return (
+                                  <tr key={idx}>
+                                    <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>{c.label}</td>
+                                    <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>{xRef}</td>
+                                    <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>{dx}</td>
+                                    <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>{c.score.toFixed(3)}</td>
+                                    <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>{strength}</td>
+                                  </tr>
+                                )
+                              }
+
+                              const lo =
+                                typeof c.range_x0_display === 'number' && typeof c.range_x1_display === 'number'
+                                  ? `${c.range_x0_display.toFixed(6)}–${c.range_x1_display.toFixed(6)} ${xUnitLabel}`
+                                  : ''
+                              return (
+                                <tr key={idx}>
+                                  <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>{c.label}</td>
+                                  <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>{lo}</td>
+                                  <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>{c.score.toFixed(3)}</td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <button
+                    type="button"
+                    onClick={onApplyTopMatchesToAnnotations}
+                    disabled={!matchResults.length}
+                    style={{ marginTop: '0.5rem', cursor: 'pointer' }}
+                  >
+                    Apply top match labels to annotations
+                  </button>
+                </div>
+              ) : null}
             </div>
           </div>
 

@@ -63,6 +63,10 @@ def test_cap07_import_reference_line_list_csv_by_url(tmp_path, monkeypatch):
         assert res.status_code == 200, res.text
         ds_id = res.json()["id"]
 
+        ds = client.get(f"/datasets/{ds_id}")
+        assert ds.status_code == 200
+        assert ds.json().get("reference", {}).get("data_type") == "LineList"
+
         data = client.get(f"/datasets/{ds_id}/data")
         assert data.status_code == 200
         payload = data.json()

@@ -32,12 +32,25 @@ def _safe_slug(value: str) -> str:
     return slug or "file"
 
 
+class ReferenceSummary(BaseModel):
+    data_type: str | None = None
+    source_name: str | None = None
+    source_url: str | None = None
+    retrieved_at: str | None = None
+    trust_tier: str | None = None
+    citation_present: bool | None = None
+    license_redistribution_allowed: str | None = None
+    sharing_visibility: str | None = None
+
+
 class DatasetSummary(BaseModel):
     id: str
     name: str
     created_at: str
     source_file_name: str
     sha256: str
+    # Optional CAP-07 metadata for citation-first visibility without extra calls.
+    reference: ReferenceSummary | None = None
 
 
 class DatasetDetail(DatasetSummary):
@@ -57,6 +70,38 @@ def sha256_bytes(raw: bytes) -> str:
 
 def _write_json(path: Path, payload: dict) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def _reference_summary(meta: dict) -> ReferenceSummary | None:
+    ref = meta.get("reference")
+    if not isinstance(ref, dict):
+        return None
+
+    lic = ref.get("license")
+    if not isinstance(lic, dict):
+        lic = {}
+
+    sharing = ref.get("sharing_policy")
+    if not isinstance(sharing, dict):
+        sharing = {}
+
+    citation_text = ref.get("citation_text")
+    citation_present: bool | None
+    if citation_text is None:
+        citation_present = None
+    else:
+        citation_present = bool(str(citation_text).strip())
+
+    return ReferenceSummary(
+        data_type=ref.get("data_type"),
+        source_name=ref.get("source_name"),
+        source_url=ref.get("source_url"),
+        retrieved_at=ref.get("retrieved_at"),
+        trust_tier=ref.get("trust_tier"),
+        citation_present=citation_present,
+        license_redistribution_allowed=lic.get("redistribution_allowed"),
+        sharing_visibility=sharing.get("visibility"),
+    )
 
 
 def save_dataset(
@@ -89,6 +134,7 @@ def save_dataset(
         created_at=created_at,
         source_file_name=source_file_name,
         sha256=sha,
+        reference=_reference_summary(parsed),
         x_unit=parsed.get("x_unit"),
         y_unit=parsed.get("y_unit"),
         x_count=int(parsed.get("x_count", 0)),
@@ -118,6 +164,7 @@ def list_datasets() -> list[DatasetSummary]:
                 created_at=str(meta.get("created_at", "")),
                 source_file_name=str(meta.get("source_file_name", "")),
                 sha256=str(meta.get("sha256", "")),
+                reference=_reference_summary(meta),
             )
         )
 
@@ -135,6 +182,7 @@ def get_dataset_detail(dataset_id: str) -> DatasetDetail:
         created_at=str(meta.get("created_at", "")),
         source_file_name=str(meta.get("source_file_name", "")),
         sha256=str(meta.get("sha256", "")),
+        reference=_reference_summary(meta),
         x_unit=meta.get("x_unit"),
         y_unit=meta.get("y_unit"),
         x_count=int(meta.get("x_count", 0)),

@@ -340,6 +340,16 @@
             "title": "Name",
             "type": "string"
           },
+          "reference": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReferenceSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "sha256": {
             "title": "Sha256",
             "type": "string"
@@ -409,6 +419,16 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "reference": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReferenceSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "sha256": {
             "title": "Sha256",
@@ -659,6 +679,110 @@
           "warnings"
         ],
         "title": "IngestPreviewResponse",
+        "type": "object"
+      },
+      "MastCaomConeRequest": {
+        "properties": {
+          "dataproduct_types": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataproduct Types"
+          },
+          "dec": {
+            "title": "Dec",
+            "type": "number"
+          },
+          "missions": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Missions"
+          },
+          "page": {
+            "default": 1,
+            "title": "Page",
+            "type": "integer"
+          },
+          "pagesize": {
+            "default": 200,
+            "title": "Pagesize",
+            "type": "integer"
+          },
+          "ra": {
+            "title": "Ra",
+            "type": "number"
+          },
+          "radius": {
+            "title": "Radius",
+            "type": "number"
+          }
+        },
+        "required": [
+          "ra",
+          "dec",
+          "radius"
+        ],
+        "title": "MastCaomConeRequest",
+        "type": "object"
+      },
+      "MastCaomProductsRequest": {
+        "properties": {
+          "obsid": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Obsid"
+          },
+          "page": {
+            "default": 1,
+            "title": "Page",
+            "type": "integer"
+          },
+          "pagesize": {
+            "default": 200,
+            "title": "Pagesize",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "obsid"
+        ],
+        "title": "MastCaomProductsRequest",
+        "type": "object"
+      },
+      "MastNameLookupRequest": {
+        "properties": {
+          "input": {
+            "title": "Input",
+            "type": "string"
+          }
+        },
+        "required": [
+          "input"
+        ],
+        "title": "MastNameLookupRequest",
         "type": "object"
       },
       "ReferenceImportJCAMPRequest": {
@@ -950,6 +1074,547 @@
           }
         },
         "title": "ReferenceLicense",
+        "type": "object"
+      },
+      "ReferenceSummary": {
+        "properties": {
+          "citation_present": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Citation Present"
+          },
+          "data_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Type"
+          },
+          "license_redistribution_allowed": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "License Redistribution Allowed"
+          },
+          "retrieved_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retrieved At"
+          },
+          "sharing_visibility": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sharing Visibility"
+          },
+          "source_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Name"
+          },
+          "source_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Url"
+          },
+          "trust_tier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trust Tier"
+          }
+        },
+        "title": "ReferenceSummary",
+        "type": "object"
+      },
+      "TelescopeFITSImportByDataURIRequest": {
+        "properties": {
+          "citation_text": {
+            "title": "Citation Text",
+            "type": "string"
+          },
+          "data_uri": {
+            "title": "Data Uri",
+            "type": "string"
+          },
+          "hdu_index": {
+            "title": "Hdu Index",
+            "type": "integer"
+          },
+          "mission": {
+            "default": "Other",
+            "enum": [
+              "JWST",
+              "HST",
+              "HLSP",
+              "Other"
+            ],
+            "title": "Mission",
+            "type": "string"
+          },
+          "product_filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Filename"
+          },
+          "query": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Query",
+            "type": "object"
+          },
+          "refresh": {
+            "default": false,
+            "title": "Refresh",
+            "type": "boolean"
+          },
+          "retrieved_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retrieved At"
+          },
+          "source_name": {
+            "default": "MAST",
+            "title": "Source Name",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "trust_tier": {
+            "default": "Primary/Authoritative",
+            "title": "Trust Tier",
+            "type": "string"
+          },
+          "x_index": {
+            "title": "X Index",
+            "type": "integer"
+          },
+          "x_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X Unit"
+          },
+          "y_index": {
+            "title": "Y Index",
+            "type": "integer"
+          },
+          "y_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Y Unit"
+          }
+        },
+        "required": [
+          "data_uri",
+          "citation_text",
+          "title",
+          "hdu_index",
+          "x_index",
+          "y_index"
+        ],
+        "title": "TelescopeFITSImportByDataURIRequest",
+        "type": "object"
+      },
+      "TelescopeFITSImportRequest": {
+        "properties": {
+          "citation_text": {
+            "title": "Citation Text",
+            "type": "string"
+          },
+          "hdu_index": {
+            "title": "Hdu Index",
+            "type": "integer"
+          },
+          "mission": {
+            "default": "Other",
+            "enum": [
+              "JWST",
+              "HST",
+              "HLSP",
+              "Other"
+            ],
+            "title": "Mission",
+            "type": "string"
+          },
+          "query": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Query",
+            "type": "object"
+          },
+          "retrieved_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retrieved At"
+          },
+          "source_name": {
+            "default": "MAST",
+            "title": "Source Name",
+            "type": "string"
+          },
+          "source_url": {
+            "format": "uri",
+            "maxLength": 2083,
+            "minLength": 1,
+            "title": "Source Url",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "trust_tier": {
+            "default": "Primary/Authoritative",
+            "title": "Trust Tier",
+            "type": "string"
+          },
+          "x_index": {
+            "title": "X Index",
+            "type": "integer"
+          },
+          "x_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X Unit"
+          },
+          "y_index": {
+            "title": "Y Index",
+            "type": "integer"
+          },
+          "y_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Y Unit"
+          }
+        },
+        "required": [
+          "source_url",
+          "citation_text",
+          "title",
+          "hdu_index",
+          "x_index",
+          "y_index"
+        ],
+        "title": "TelescopeFITSImportRequest",
+        "type": "object"
+      },
+      "TelescopeFITSPreviewByDataURIRequest": {
+        "properties": {
+          "citation_text": {
+            "title": "Citation Text",
+            "type": "string"
+          },
+          "data_uri": {
+            "title": "Data Uri",
+            "type": "string"
+          },
+          "mission": {
+            "default": "Other",
+            "enum": [
+              "JWST",
+              "HST",
+              "HLSP",
+              "Other"
+            ],
+            "title": "Mission",
+            "type": "string"
+          },
+          "product_filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Filename"
+          },
+          "query": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Query",
+            "type": "object"
+          },
+          "refresh": {
+            "default": false,
+            "title": "Refresh",
+            "type": "boolean"
+          },
+          "retrieved_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retrieved At"
+          },
+          "source_name": {
+            "default": "MAST",
+            "title": "Source Name",
+            "type": "string"
+          },
+          "trust_tier": {
+            "default": "Primary/Authoritative",
+            "title": "Trust Tier",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data_uri",
+          "citation_text"
+        ],
+        "title": "TelescopeFITSPreviewByDataURIRequest",
+        "type": "object"
+      },
+      "TelescopeFITSPreviewCandidate": {
+        "properties": {
+          "columns": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Columns",
+            "type": "array"
+          },
+          "hdu_index": {
+            "title": "Hdu Index",
+            "type": "integer"
+          },
+          "hdu_name": {
+            "title": "Hdu Name",
+            "type": "string"
+          },
+          "suggested_x_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggested X Index"
+          },
+          "suggested_y_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggested Y Index"
+          }
+        },
+        "required": [
+          "hdu_index",
+          "hdu_name",
+          "columns",
+          "suggested_x_index",
+          "suggested_y_index"
+        ],
+        "title": "TelescopeFITSPreviewCandidate",
+        "type": "object"
+      },
+      "TelescopeFITSPreviewRequest": {
+        "properties": {
+          "citation_text": {
+            "title": "Citation Text",
+            "type": "string"
+          },
+          "mission": {
+            "default": "Other",
+            "enum": [
+              "JWST",
+              "HST",
+              "HLSP",
+              "Other"
+            ],
+            "title": "Mission",
+            "type": "string"
+          },
+          "query": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Query",
+            "type": "object"
+          },
+          "retrieved_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retrieved At"
+          },
+          "source_name": {
+            "default": "MAST",
+            "title": "Source Name",
+            "type": "string"
+          },
+          "source_url": {
+            "format": "uri",
+            "maxLength": 2083,
+            "minLength": 1,
+            "title": "Source Url",
+            "type": "string"
+          },
+          "trust_tier": {
+            "default": "Primary/Authoritative",
+            "title": "Trust Tier",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_url",
+          "citation_text"
+        ],
+        "title": "TelescopeFITSPreviewRequest",
+        "type": "object"
+      },
+      "TelescopeFITSPreviewResponse": {
+        "properties": {
+          "cache": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache"
+          },
+          "file_name": {
+            "title": "File Name",
+            "type": "string"
+          },
+          "file_size_bytes": {
+            "title": "File Size Bytes",
+            "type": "integer"
+          },
+          "fits_hdu_candidates": {
+            "items": {
+              "$ref": "#/components/schemas/TelescopeFITSPreviewCandidate"
+            },
+            "title": "Fits Hdu Candidates",
+            "type": "array"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "file_name",
+          "file_size_bytes",
+          "sha256",
+          "fits_hdu_candidates",
+          "warnings"
+        ],
+        "title": "TelescopeFITSPreviewResponse",
         "type": "object"
       },
       "ValidationError": {
@@ -1589,6 +2254,278 @@
           }
         },
         "summary": "References Import Line List Csv"
+      }
+    },
+    "/telescope/import/fits-by-url": {
+      "post": {
+        "operationId": "telescope_import_fits_by_url_telescope_import_fits_by_url_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TelescopeFITSImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Telescope Import Fits By Url"
+      }
+    },
+    "/telescope/mast/caom-products": {
+      "post": {
+        "operationId": "telescope_mast_caom_products_telescope_mast_caom_products_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MastCaomProductsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Telescope Mast Caom Products Telescope Mast Caom Products Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Telescope Mast Caom Products"
+      }
+    },
+    "/telescope/mast/caom-search": {
+      "post": {
+        "operationId": "telescope_mast_caom_search_telescope_mast_caom_search_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MastCaomConeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Telescope Mast Caom Search Telescope Mast Caom Search Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Telescope Mast Caom Search"
+      }
+    },
+    "/telescope/mast/import/fits-by-data-uri": {
+      "post": {
+        "operationId": "telescope_mast_import_fits_by_data_uri_telescope_mast_import_fits_by_data_uri_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TelescopeFITSImportByDataURIRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Telescope Mast Import Fits By Data Uri"
+      }
+    },
+    "/telescope/mast/name-lookup": {
+      "post": {
+        "operationId": "telescope_mast_name_lookup_telescope_mast_name_lookup_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MastNameLookupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Telescope Mast Name Lookup Telescope Mast Name Lookup Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Telescope Mast Name Lookup"
+      }
+    },
+    "/telescope/mast/preview/fits-by-data-uri": {
+      "post": {
+        "operationId": "telescope_mast_preview_fits_by_data_uri_telescope_mast_preview_fits_by_data_uri_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TelescopeFITSPreviewByDataURIRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TelescopeFITSPreviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Telescope Mast Preview Fits By Data Uri"
+      }
+    },
+    "/telescope/preview/fits-by-url": {
+      "post": {
+        "operationId": "telescope_preview_fits_by_url_telescope_preview_fits_by_url_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TelescopeFITSPreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TelescopeFITSPreviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Telescope Preview Fits By Url"
       }
     }
   }

@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
-import { convertXFromCanonical, differentialCompare, normalizeY, savitzkyGolaySmooth } from './transforms'
+import {
+  convertXFromCanonical,
+  convertXScalarToCanonical,
+  differentialCompare,
+  normalizeY,
+  savitzkyGolaySmooth,
+} from './transforms'
 
 describe('CAP-05 transforms', () => {
   it('converts nm <-> cm⁻¹ without cumulative drift (canonical baseline)', () => {
@@ -16,6 +22,13 @@ describe('CAP-05 transforms', () => {
     // Since we always start from canonical in UI, results must match.
     const toWn2 = convertXFromCanonical(xNm, 'nm', 'cm⁻¹').x
     expect(toWn2).toEqual(toWn)
+  })
+
+  it('converts display x back to canonical', () => {
+    const xCanonical = 500
+    const xDisplay = convertXFromCanonical([xCanonical], 'nm', 'cm⁻¹').x[0]
+    const back = convertXScalarToCanonical(xDisplay, 'nm', 'cm⁻¹')
+    expect(back).toBeCloseTo(xCanonical, 8)
   })
 
   it('max-normalizes y so max(|y|)=1', () => {
