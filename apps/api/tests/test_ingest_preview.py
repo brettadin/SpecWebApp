@@ -109,3 +109,35 @@ def test_ingest_preview_fits_detects_table_columns() -> None:
     assert body["suggested_x_index"] == 0
     assert body["suggested_y_index"] == 1
     assert [c["name"] for c in body["columns"]] == ["wavelength", "flux"]
+
+
+def test_ingest_preview_ocean_optics_txt_extracts_metadata_and_xy() -> None:
+    client = TestClient(app)
+
+    txt = """
+Data from example.txt Node
+
+Date: Mon Nov 17 14:18:29 EST 2025
+User: brett
+Spectrometer: USB4F03499
+XAxis mode: Wavelengths
+Number of Pixels in Spectrum: 3
+>>>>>Begin Spectral Data<<<<<
+3.4539E2\t2.364445E0
+3.4561E2\t2.364445E0
+3.4582E2\t2.364445E0
+""".lstrip().encode("utf-8")
+
+    res = client.post(
+        "/ingest/preview",
+        files={"file": ("ocean.txt", txt, "text/plain")},
+    )
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["parser"] == "delimited-text"
+    assert body["suggested_x_index"] == 0
+    assert body["suggested_y_index"] == 1
+    assert body.get("source_metadata", {}).get("Spectrometer") == "USB4F03499"
+    assert body.get("source_metadata", {}).get("XAxis mode") == "Wavelengths"
+    assert len(body["preview_rows"]) >= 2

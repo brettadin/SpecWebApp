@@ -203,4 +203,9 @@ def get_dataset_xy(dataset_id: str) -> dict:
         "y_unit": meta.get("y_unit"),
         # Optional CAP-07 metadata used by UI for trust-first display.
         "reference": meta.get("reference"),
+        # Optional messy-header/instrument metadata captured at ingest.
+        "parser": meta.get("parser"),
+        "parser_decisions": meta.get("parser_decisions"),
+        "source_metadata": meta.get("source_metadata"),
+        "source_preamble": meta.get("source_preamble"),
     }

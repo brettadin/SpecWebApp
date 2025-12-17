@@ -17,6 +17,8 @@ type IngestPreviewResponse = {
   suggested_x_index: number | null
   suggested_y_index: number | null
   warnings: string[]
+  source_preamble?: string[] | null
+  source_metadata?: Record<string, string> | null
 }
 
 type DatasetSummary = {
@@ -215,7 +217,12 @@ export function LibraryPage() {
       setXUnit((prev) => prev || json.x_unit_hint || '')
       setYUnit((prev) => prev || json.y_unit_hint || '')
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      const msg = e instanceof Error ? e.message : String(e)
+      if (/failed to fetch|networkerror|fetch\s*failed/i.test(msg)) {
+        setError(`${msg}. Is the API running on http://localhost:8000? Try the VS Code task “Dev: full stack”.`)
+      } else {
+        setError(msg)
+      }
     } finally {
       setBusy(false)
     }
@@ -506,10 +513,7 @@ export function LibraryPage() {
     setMastYIndex('')
 
     if (!mastSelectedDataURI.trim()) return
-    if (!mastCitation.trim()) {
-      setMastError('Citation text is required (CAP-08 citation-first).')
-      return
-    }
+    // Allow preview without citation text; citation is required at import time.
 
     setMastBusy(true)
     try {
@@ -643,6 +647,29 @@ export function LibraryPage() {
           <p style={{ marginTop: '0.25rem', marginBottom: '0.25rem' }}>
             Parser: <strong>{preview.parser}</strong>
           </p>
+          {preview.source_metadata && Object.keys(preview.source_metadata).length ? (
+            <div
+              style={{
+                marginTop: '0.5rem',
+                border: '1px solid #e5e7eb',
+                padding: '0.5rem',
+              }}
+            >
+              <div style={{ fontSize: '0.9rem', marginBottom: '0.25rem' }}>
+                Detected header metadata (from the file’s preamble):
+              </div>
+              <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: '0.9rem' }}>
+                <tbody>
+                  {Object.entries(preview.source_metadata).map(([k, v]) => (
+                    <tr key={k}>
+                      <td style={{ padding: '0.1rem 0.25rem', fontWeight: 600, verticalAlign: 'top' }}>{k}</td>
+                      <td style={{ padding: '0.1rem 0.25rem', verticalAlign: 'top' }}>{v}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
           {preview.parser === 'fits' && preview.fits_hdu_candidates?.length ? (
             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '0.25rem' }}>
               <label>
@@ -670,7 +697,7 @@ export function LibraryPage() {
           ) : null}
 
           <div style={{ display: 'grid', gap: '0.5rem', marginTop: '0.75rem' }}>
-            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
               <label>
                 X column:{' '}
                 <select
@@ -681,6 +708,7 @@ export function LibraryPage() {
                   {preview.columns.map((c) => (
                     <option key={c.index} value={c.index}>
                       {c.index}: {c.name}
+                      {c.is_numeric ? ' (numeric)' : c.non_numeric_count ? ` (messy: ${c.non_numeric_count} non-numeric)` : ' (non-numeric)'}
                     </option>
                   ))}
                 </select>
@@ -696,19 +724,40 @@ export function LibraryPage() {
                   {preview.columns.map((c) => (
                     <option key={c.index} value={c.index}>
                       {c.index}: {c.name}
+                      {c.is_numeric ? ' (numeric)' : c.non_numeric_count ? ` (messy: ${c.non_numeric_count} non-numeric)` : ' (non-numeric)'}
                     </option>
                   ))}
                 </select>
               </label>
+
+              <button
+                type="button"
+                disabled={busy || preview.suggested_x_index == null || preview.suggested_y_index == null}
+                onClick={() => {
+                  if (preview.suggested_x_index != null) setXIndex(preview.suggested_x_index)
+                  if (preview.suggested_y_index != null) setYIndex(preview.suggested_y_index)
+                  // Only prefill units when the preview extracted them from headers.
+                  if (!xUnit.trim() && preview.x_unit_hint) setXUnit(preview.x_unit_hint)
+                  if (!yUnit.trim() && preview.y_unit_hint) setYUnit(preview.y_unit_hint)
+                }}
+                style={{ cursor: 'pointer' }}
+                title="Apply the preview’s best-guess X/Y columns"
+              >
+                Use suggested
+              </button>
             </div>
 
-            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            <div style={{ fontSize: '0.9rem' }}>
+              Units are optional and used for display/conversion only. Don’t enter min/max ranges here.
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
               <label>
-                X unit:{' '}
+                X unit (optional):{' '}
                 <input value={xUnit} onChange={(e) => setXUnit(e.target.value)} placeholder="e.g., nm" />
               </label>
               <label>
-                Y unit:{' '}
+                Y unit (optional):{' '}
                 <input value={yUnit} onChange={(e) => setYUnit(e.target.value)} placeholder="e.g., flux" />
               </label>
               <button disabled={busy || !selectedFile || xIndex === '' || yIndex === ''} onClick={onCommit}>

@@ -18,7 +18,7 @@ if (-not (Test-Path $venvPython)) {
 }
 
 Write-Host 'Starting API (new terminal window)...'
-$apiCmd = "cd '$apiDir'; .\.venv\Scripts\Activate.ps1; uvicorn app.main:app --reload --port 8000"
+$apiCmd = "cd '$apiDir'; .\.venv\Scripts\Activate.ps1; python -m uvicorn app.main:app --reload --port 8000"
 Start-Process pwsh -ArgumentList @('-NoExit','-Command', $apiCmd)
 
 # --- Web UI ---

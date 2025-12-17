@@ -586,6 +586,12 @@ export interface components {
             parser: string;
             /** Preview Rows */
             preview_rows: string[][];
+            /** Source Metadata */
+            source_metadata?: {
+                [key: string]: string;
+            } | null;
+            /** Source Preamble */
+            source_preamble?: string[] | null;
             /** Suggested X Index */
             suggested_x_index: number | null;
             /** Suggested Y Index */

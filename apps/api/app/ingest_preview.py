@@ -38,6 +38,9 @@ class IngestPreviewResponse(BaseModel):
     suggested_x_index: int | None
     suggested_y_index: int | None
     warnings: list[str]
+    # Best-effort capture of messy headers / instrument exports.
+    source_preamble: list[str] | None = None
+    source_metadata: dict[str, str] | None = None
 
 
 class ParsedDataset(BaseModel):
@@ -54,6 +57,9 @@ class ParsedDataset(BaseModel):
     y: list[float]
     x_count: int
     warnings: list[str]
+    # Best-effort capture of messy headers / instrument exports.
+    source_preamble: list[str] | None = None
+    source_metadata: dict[str, str] | None = None
 
 
 @dataclass(frozen=True)
@@ -93,7 +99,90 @@ def _sniff_csv(sample: str) -> tuple[str, bool]:
     return delimiter, has_header
 
 
+_SPECTRAL_DATA_MARKER = ">>>>>BEGIN SPECTRAL DATA<<<<<"
+
+
+def _strip_spectral_data_preamble(text: str) -> str:
+    """Best-effort support for instrument exports with a data marker.
+
+    Example: Ocean Optics/OceanView-style TXT files include a header section and a
+    '>>>>>Begin Spectral Data<<<<<' marker before the 2-column numeric data.
+    """
+
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        if line.strip().upper() == _SPECTRAL_DATA_MARKER:
+            return "\n".join(lines[i + 1 :]).lstrip("\n")
+    return text
+
+
+_META_KV_RE = re.compile(r"^\s*(?P<key>[^:=]{1,64})\s*[:=]\s*(?P<value>.+?)\s*$")
+
+
+def _split_spectral_data_marker(text: str) -> tuple[list[str], str]:
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        if line.strip().upper() == _SPECTRAL_DATA_MARKER:
+            return lines[:i], "\n".join(lines[i + 1 :]).lstrip("\n")
+    return [], text
+
+
+def _split_leading_comment_preamble(text: str) -> tuple[list[str], str]:
+    lines = text.splitlines()
+    pre: list[str] = []
+    comment_prefixes = ("#", "//", ";", "!")
+    idx = 0
+    for _idx, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped:
+            pre.append(line)
+            continue
+        if stripped.startswith(comment_prefixes):
+            pre.append(line)
+            continue
+        idx = _idx
+        break
+    else:
+        return pre, ""
+
+    return pre, "\n".join(lines[idx:])
+
+
+def _extract_metadata_from_preamble(preamble_lines: list[str]) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for line in preamble_lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.upper() == _SPECTRAL_DATA_MARKER:
+            continue
+        m = _META_KV_RE.match(stripped)
+        if not m:
+            continue
+        key = m.group("key").strip()
+        val = m.group("value").strip()
+        if not key or not val:
+            continue
+        if key in out:
+            # Keep first occurrence to avoid silently overwriting meaningful fields.
+            continue
+        out[key] = val
+    return out
+
+
+def _extract_text_preamble_and_metadata(text: str) -> tuple[list[str], dict[str, str]]:
+    spectral_preamble, after_marker = _split_spectral_data_marker(text)
+    comment_preamble, _rest = _split_leading_comment_preamble(after_marker)
+
+    preamble = [*spectral_preamble, *comment_preamble]
+    # Avoid huge payloads; keep a small, useful sample.
+    preamble_trimmed = preamble[:200]
+    meta = _extract_metadata_from_preamble(preamble_trimmed)
+    return preamble_trimmed, meta
+
+
 def _parse_delimited_text(text: str, max_rows: int) -> _ParseResult:
+    text = _strip_spectral_data_preamble(text)
     # Skip leading comment/preamble lines (messy files).
     lines = text.splitlines()
     cleaned_lines: list[str] = []
@@ -139,6 +228,7 @@ def _iter_nonempty_rows(reader: Iterable[list[str]]) -> Iterable[list[str]]:
 
 
 def _parse_delimited_text_all(text: str) -> _ParseResult:
+    text = _strip_spectral_data_preamble(text)
     lines = text.splitlines()
     cleaned_lines: list[str] = []
     comment_prefixes = ("#", "//", ";", "!")
@@ -210,6 +300,8 @@ def build_ingest_preview(
                 suggested_x_index=None,
                 suggested_y_index=None,
                 warnings=["No FITS table HDUs found for 1D spectra."],
+                source_preamble=None,
+                source_metadata=None,
             )
 
         fits_candidates = [
@@ -265,6 +357,8 @@ def build_ingest_preview(
             suggested_x_index=x_idx,
             suggested_y_index=y_idx,
             warnings=warnings,
+            source_preamble=None,
+            source_metadata=None,
         )
 
     if b"##" in head and (b"JCAMP" in upper_head or b"XYDATA" in upper_head):
@@ -296,10 +390,13 @@ def build_ingest_preview(
             suggested_x_index=0,
             suggested_y_index=1,
             warnings=parsed_jc.warnings,
+            source_preamble=None,
+            source_metadata=parsed_jc.header,
         )
 
     warnings: list[str] = []
     text, encoding = _decode_text(raw)
+    preamble_lines, preamble_meta = _extract_text_preamble_and_metadata(text)
     parsed = _parse_delimited_text(text, max_rows=max_rows)
 
     if not parsed.rows:
@@ -391,6 +488,8 @@ def build_ingest_preview(
         suggested_x_index=suggested_x_index,
         suggested_y_index=suggested_y_index,
         warnings=warnings,
+        source_preamble=preamble_lines or None,
+        source_metadata=preamble_meta or None,
     )
 
 
@@ -421,6 +520,7 @@ def parse_delimited_xy(
     warnings: list[str] = []
 
     text, encoding = _decode_text(raw)
+    preamble_lines, preamble_meta = _extract_text_preamble_and_metadata(text)
     parsed = _parse_delimited_text_all(text)
 
     def cell_at(row: list[str], index: int) -> str:
@@ -475,4 +575,6 @@ def parse_delimited_xy(
         y=y,
         x_count=len(x),
         warnings=warnings,
+        source_preamble=preamble_lines or None,
+        source_metadata=preamble_meta or None,
     )

@@ -2,6 +2,20 @@
   "version": "2.0.0",
   "tasks": [
     {
+      "label": "API: dev",
+      "type": "shell",
+      "command": "pwsh",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "cd '${workspaceFolder}\\apps\\api'; if (!(Test-Path .venv\\Scripts\\python.exe)) { py -m venv .venv; .\.venv\\Scripts\\python.exe -m pip install --upgrade pip; .\.venv\\Scripts\\python.exe -m pip install -r requirements-dev.txt }; .\.venv\\Scripts\\python.exe -m uvicorn app.main:app --reload --port 8000"
+      ],
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
       "label": "Web: dev",
       "type": "shell",
       "command": "npm",
@@ -13,6 +27,12 @@
         "cwd": "${workspaceFolder}/apps/web"
       },
       "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "Dev: full stack",
+      "dependsOn": ["API: dev", "Web: dev"],
+      "dependsOrder": "parallel",
       "problemMatcher": []
     }
   ]

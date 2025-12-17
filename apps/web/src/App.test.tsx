@@ -18,13 +18,16 @@ describe('App navigation', () => {
     expect(screen.getByTestId('nav-docs')).toBeInTheDocument()
   })
 
-  it('renders a route page', () => {
+  it('renders library panel and a route page', () => {
     render(
       <MemoryRouter initialEntries={['/library']}>
         <App />
       </MemoryRouter>,
     )
 
+    // Library is always present as the left panel.
     expect(screen.getByRole('heading', { name: 'Library' })).toBeInTheDocument()
+    // /library redirects to /plot in the center workbench.
+    expect(screen.getByRole('heading', { name: 'Plot' })).toBeInTheDocument()
   })
 })

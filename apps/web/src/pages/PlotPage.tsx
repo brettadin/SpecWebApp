@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import Plot, { type PlotParams } from 'react-plotly.js'
+import { Component, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
+import PlotlyModule, { type PlotParams } from 'react-plotly.js'
 
 import {
   baselineCorrectPolynomial,
@@ -21,6 +22,11 @@ import {
 } from '../lib/transforms'
 
 import { detectFeatures, type DetectedFeature, type FeatureMode } from '../lib/featureDetection'
+import { usePanelSlots } from '../layout/panelSlotsContext'
+
+const PlotComponent: React.ComponentType<PlotParams> =
+  ((PlotlyModule as unknown as { default?: React.ComponentType<PlotParams> }).default ??
+    (PlotlyModule as unknown as React.ComponentType<PlotParams>))
 
 type DatasetSummary = {
   id: string
@@ -107,6 +113,55 @@ type PlotlyDash = 'solid' | 'dot' | 'dash' | 'longdash' | 'dashdot' | 'longdashd
 
 const dashStyles: PlotlyDash[] = ['solid', 'dot', 'dash', 'longdash', 'dashdot', 'longdashdot']
 
+class PlotErrorBoundary extends Component<
+  {
+    children: ReactNode
+  },
+  {
+    hasError: boolean
+    message: string
+  }
+> {
+  state = { hasError: false, message: '' }
+
+  static getDerivedStateFromError(error: unknown) {
+    const message = error instanceof Error ? error.message : String(error)
+    return { hasError: true, message }
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ border: '1px solid #e5e7eb', padding: '1rem' }}>
+          <p style={{ margin: 0, color: 'crimson' }}>Plot failed to render.</p>
+          <p style={{ marginTop: '0.5rem', marginBottom: 0, fontSize: '0.9rem' }}>{this.state.message}</p>
+          <p style={{ marginTop: '0.5rem', marginBottom: 0, fontSize: '0.9rem' }}>
+            If this happens after toggling a trace, it usually means the dataset contains unexpected values. Please open DevTools
+            Console for details.
+          </p>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
+
+function coerceFinitePairs(xRaw: unknown, yRaw: unknown): { x: number[]; y: number[] } {
+  const xIn = Array.isArray(xRaw) ? xRaw : []
+  const yIn = Array.isArray(yRaw) ? yRaw : []
+  const n = Math.min(xIn.length, yIn.length)
+  const x: number[] = []
+  const y: number[] = []
+  for (let i = 0; i < n; i += 1) {
+    const xi = Number(xIn[i])
+    const yi = Number(yIn[i])
+    if (!Number.isFinite(xi) || !Number.isFinite(yi)) continue
+    x.push(xi)
+    y.push(yi)
+  }
+  return { x, y }
+}
+
 function formatUnit(unit: string | null) {
   return unit?.trim() ? unit.trim() : 'unknown'
 }
@@ -135,6 +190,8 @@ function sanitizeFilename(name: string) {
 }
 
 export function PlotPage() {
+  const panelSlots = usePanelSlots()
+  const rightSlot = panelSlots?.rightSlot ?? null
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [datasets, setDatasets] = useState<DatasetSummary[]>([])
@@ -246,6 +303,28 @@ export function PlotPage() {
     [traceStates],
   )
 
+  const onPlotClick = useCallback(
+    (e: unknown) => {
+      const ev = e as { points?: Array<{ x?: unknown; y?: unknown }> } | null
+      const first = ev?.points?.[0]
+      if (!first) return
+
+      const x = first.x
+      const y = first.y
+      if (x == null || y == null) return
+
+      setNewPointX(String(x))
+      setNewPointY(String(y))
+      setShowAnnotations(true)
+
+      if (!newAnnotationDatasetId) {
+        const fallback = visibleDatasetIds[0]
+        if (fallback) setNewAnnotationDatasetId(fallback)
+      }
+    },
+    [newAnnotationDatasetId, visibleDatasetIds],
+  )
+
   useEffect(() => {
     let cancelled = false
 
@@ -264,7 +343,14 @@ export function PlotPage() {
           return json.map((d) => existing.get(d.id) ?? { datasetId: d.id, visible: false })
         })
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : String(e))
+        if (!cancelled) {
+          const msg = e instanceof Error ? e.message : String(e)
+          if (/failed to fetch|networkerror|fetch\s*failed/i.test(msg)) {
+            setError(`${msg}. Is the API running on http://localhost:8000? Try the VS Code task “Dev: full stack”.`)
+          } else {
+            setError(msg)
+          }
+        }
       } finally {
         if (!cancelled) setBusy(false)
       }
@@ -430,12 +516,16 @@ export function PlotPage() {
         const s = t.series as DatasetSeries
         const displayName = t.meta?.name || t.id
 
-        let x = s.x
+        const coerced = coerceFinitePairs(s.x, s.y)
+        const canonicalX = coerced.x
+        const canonicalY = coerced.y
+
+        let x = canonicalX
         try {
-          x = convertXFromCanonical(s.x, s.x_unit, displayXUnit).x
+          x = convertXFromCanonical(canonicalX, s.x_unit, displayXUnit).x
         } catch {
           // If X unit is unknown, keep canonical and let the UI guide the user.
-          x = s.x
+          x = canonicalX
         }
 
         if (s.reference?.data_type === 'LineList') {
@@ -443,7 +533,7 @@ export function PlotPage() {
             type: 'bar',
             name: displayName,
             x,
-            y: s.y,
+            y: canonicalY,
             hovertemplate: `${displayName}<br>x=%{x} ${xUnit}<br>strength=%{y}<extra></extra>`,
           }
         }
@@ -455,7 +545,7 @@ export function PlotPage() {
           mode: 'lines',
           name: displayName,
           x,
-          y: s.y,
+          y: canonicalY,
           line: { dash },
           hovertemplate: `${displayName}<br>x=%{x} ${xUnit}<br>y=%{y} ${yUnit}<extra></extra>`,
         }
@@ -1654,6 +1744,948 @@ export function PlotPage() {
     return rows.filter((row) => (row.meta?.name ?? '').toLowerCase().includes(q))
   }, [traceStates, datasetsById, filter])
 
+  const inspectorContent = (
+    <>
+      <div>
+        <label htmlFor="trace-filter" style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>
+          Trace filter
+        </label>
+        <input
+          id="trace-filter"
+          aria-label="Trace filter"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          placeholder="Filter by dataset name"
+          style={{ width: '100%' }}
+        />
+      </div>
+
+      <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem', flexWrap: 'wrap' }}>
+        <button type="button" onClick={onShowAll} style={{ cursor: 'pointer' }}>
+          Show all
+        </button>
+        <button type="button" onClick={onHideAll} style={{ cursor: 'pointer' }}>
+          Hide all
+        </button>
+      </div>
+
+      <div style={{ marginTop: '0.75rem' }}>
+        <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Traces</div>
+        {busy ? <p>Loading datasets…</p> : null}
+        {error ? <p style={{ color: 'crimson' }}>{error}</p> : null}
+        {warning ? <p>{warning}</p> : null}
+
+        {filteredTraceRows.length ? (
+          <div style={{ display: 'grid', gap: '0.25rem' }}>
+            <div style={{ fontWeight: 700, marginTop: '0.25rem' }}>Original</div>
+            {filteredTraceRows.map(({ t, meta }) => (
+              <div
+                key={t.datasetId}
+                style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto', gap: '0.5rem', alignItems: 'center' }}
+              >
+                <input
+                  type="checkbox"
+                  aria-label={`Toggle ${meta?.name ?? t.datasetId}`}
+                  checked={t.visible}
+                  onChange={(e) => onToggleDataset(t.datasetId, e.target.checked)}
+                />
+                <div title={meta?.name ?? t.datasetId} style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {meta?.name ?? t.datasetId}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onIsolate(t.datasetId)}
+                  disabled={!t.visible && visibleDatasetIds.length === 0}
+                  style={{ cursor: 'pointer' }}
+                >
+                  Isolate
+                </button>
+              </div>
+            ))}
+
+            {derivedTraces.length ? (
+              <>
+                <div style={{ fontWeight: 700, marginTop: '0.5rem' }}>Derived</div>
+                {derivedTraces.map((t) => (
+                  <div
+                    key={t.traceId}
+                    style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '0.5rem', alignItems: 'center' }}
+                  >
+                    <input
+                      type="checkbox"
+                      aria-label={`Toggle ${t.name}`}
+                      checked={t.visible}
+                      onChange={(e) => onToggleDerived(t.traceId, e.target.checked)}
+                    />
+                    <div title={t.name} style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {t.name}
+                    </div>
+                  </div>
+                ))}
+              </>
+            ) : null}
+          </div>
+        ) : (
+          <p style={{ marginTop: '0.25rem' }}>No datasets found. Import one in Library first.</p>
+        )}
+      </div>
+
+      <div style={{ marginTop: '0.75rem', borderTop: '1px solid #e5e7eb', paddingTop: '0.75rem' }}>
+        <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Transforms (CAP-05)</div>
+
+        <div style={{ marginTop: '0.5rem' }}>
+          <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Targets</label>
+          {visibleDatasetIds.length ? (
+            <div style={{ display: 'grid', gap: '0.25rem' }}>
+              {visibleDatasetIds.map((id) => (
+                <label key={id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <input
+                    type="checkbox"
+                    checked={selectedTransformDatasetIds.includes(id)}
+                    onChange={(e) => toggleTransformTarget(id, e.target.checked)}
+                  />
+                  <span>{datasetsById.get(id)?.name ?? id}</span>
+                </label>
+              ))}
+            </div>
+          ) : (
+            <p style={{ marginTop: '0.25rem' }}>Select a trace to enable transforms.</p>
+          )}
+        </div>
+
+        <div style={{ marginTop: '0.5rem' }}>
+          <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>X unit display (view-only)</label>
+          <select
+            aria-label="X unit display"
+            value={displayXUnit}
+            onChange={(e) => setDisplayXUnit(e.target.value as DisplayXUnit)}
+            style={{ width: '100%' }}
+          >
+            <option value="as-imported">As imported</option>
+            <option value="nm" disabled={!xUnitIsKnown}>
+              nm
+            </option>
+            <option value="Å" disabled={!xUnitIsKnown}>
+              Å
+            </option>
+            <option value="µm" disabled={!xUnitIsKnown}>
+              µm
+            </option>
+            <option value="cm⁻¹" disabled={!xUnitIsKnown}>
+              cm⁻¹
+            </option>
+          </select>
+          {!xUnitIsKnown ? (
+            <p style={{ marginTop: '0.25rem' }}>X unit unknown; conversion disabled until metadata is set.</p>
+          ) : null}
+        </div>
+
+        <div style={{ marginTop: '0.5rem' }}>
+          <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Y normalization/scaling</label>
+          <select
+            aria-label="Y normalization"
+            value={normMode}
+            onChange={(e) => setNormMode(e.target.value as NormalizationMode)}
+            style={{ width: '100%' }}
+          >
+            <option value="none">None</option>
+            <option value="max">Max normalization</option>
+            <option value="min-max">Min-max scaling</option>
+            <option value="z-score">Z-score</option>
+            <option value="area">Area normalization</option>
+          </select>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginTop: '0.5rem' }}>
+            <input
+              aria-label="Normalization range x0"
+              placeholder={`x0 (${xUnitLabel}) optional`}
+              value={normRangeX0}
+              onChange={(e) => setNormRangeX0(e.target.value)}
+            />
+            <input
+              aria-label="Normalization range x1"
+              placeholder={`x1 (${xUnitLabel}) optional`}
+              value={normRangeX1}
+              onChange={(e) => setNormRangeX1(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div style={{ marginTop: '0.5rem' }}>
+          <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Baseline correction</label>
+          <select
+            aria-label="Baseline correction"
+            value={baselineMode}
+            onChange={(e) => setBaselineMode(e.target.value as BaselineMode)}
+            style={{ width: '100%' }}
+          >
+            <option value="none">None</option>
+            <option value="poly">Polynomial baseline</option>
+          </select>
+
+          {baselineMode === 'poly' ? (
+            <>
+              <input
+                aria-label="Baseline polynomial order"
+                placeholder="order (e.g. 1)"
+                value={baselineOrder}
+                onChange={(e) => setBaselineOrder(e.target.value)}
+                style={{ width: '100%', marginTop: '0.5rem' }}
+              />
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.5rem' }}>
+                <input
+                  type="checkbox"
+                  checked={includeBaselineTrace}
+                  onChange={(e) => setIncludeBaselineTrace(e.target.checked)}
+                />
+                Include baseline trace
+              </label>
+            </>
+          ) : null}
+        </div>
+
+        <div style={{ marginTop: '0.5rem' }}>
+          <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Smoothing (optional)</label>
+          <select
+            aria-label="Smoothing"
+            value={smoothingMode}
+            onChange={(e) => setSmoothingMode(e.target.value as SmoothingMode)}
+            style={{ width: '100%' }}
+          >
+            <option value="none">Off</option>
+            <option value="savgol">Savitzky-Golay</option>
+          </select>
+
+          {smoothingMode === 'savgol' ? (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginTop: '0.5rem' }}>
+              <input
+                aria-label="Savitzky-Golay window length"
+                placeholder="window (odd)"
+                value={savgolWindow}
+                onChange={(e) => setSavgolWindow(e.target.value)}
+              />
+              <input
+                aria-label="Savitzky-Golay polyorder"
+                placeholder="polyorder"
+                value={savgolPolyorder}
+                onChange={(e) => setSavgolPolyorder(e.target.value)}
+              />
+            </div>
+          ) : null}
+        </div>
+
+        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            onClick={onApplyTransforms}
+            disabled={!selectedTransformDatasetIds.length}
+            style={{ cursor: 'pointer' }}
+          >
+            Apply
+          </button>
+          <button type="button" onClick={clearLastDerived} disabled={!derivedTraces.length} style={{ cursor: 'pointer' }}>
+            Clear last derived
+          </button>
+          <button type="button" onClick={clearAllDerived} disabled={!derivedTraces.length} style={{ cursor: 'pointer' }}>
+            Clear all derived
+          </button>
+          <button type="button" onClick={onSaveDerivedToLibrary} disabled={!derivedTraces.length} style={{ cursor: 'pointer' }}>
+            Save derived to Library
+          </button>
+        </div>
+
+        <div style={{ marginTop: '0.75rem', borderTop: '1px solid #e5e7eb', paddingTop: '0.75rem' }}>
+          <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Differential (CAP-06)</div>
+
+          <div style={{ display: 'grid', gap: '0.5rem' }}>
+            <div>
+              <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Trace A</label>
+              <select
+                aria-label="Trace A"
+                value={diffA}
+                onChange={(e) => !diffLockA && setDiffA(e.target.value)}
+                disabled={diffLockA}
+                style={{ width: '100%' }}
+              >
+                <option value="">(select)</option>
+                {differentialOptions.map((o) => (
+                  <option key={o.key} value={o.key}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.25rem' }}>
+                <input type="checkbox" checked={diffLockA} onChange={(e) => setDiffLockA(e.target.checked)} />
+                Lock A
+              </label>
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Trace B</label>
+              <select
+                aria-label="Trace B"
+                value={diffB}
+                onChange={(e) => !diffLockB && setDiffB(e.target.value)}
+                disabled={diffLockB}
+                style={{ width: '100%' }}
+              >
+                <option value="">(select)</option>
+                {differentialOptions.map((o) => (
+                  <option key={o.key} value={o.key}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.25rem' }}>
+                <input type="checkbox" checked={diffLockB} onChange={(e) => setDiffLockB(e.target.checked)} />
+                Lock B
+              </label>
+            </div>
+
+            <button type="button" onClick={onSwapDiff} style={{ cursor: 'pointer' }}>
+              Swap A ↔ B
+            </button>
+
+            <div>
+              <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Operation</label>
+              <select
+                aria-label="Differential operation"
+                value={diffOp}
+                onChange={(e) => setDiffOp(e.target.value as DifferentialOp)}
+                style={{ width: '100%' }}
+              >
+                <option value="A-B">A−B</option>
+                <option value="A/B">A/B</option>
+              </select>
+            </div>
+
+            <div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                <input
+                  type="checkbox"
+                  checked={diffAlignmentEnabled}
+                  onChange={(e) => setDiffAlignmentEnabled(e.target.checked)}
+                />
+                Enable alignment (interpolation)
+              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginTop: '0.5rem' }}>
+                <select
+                  aria-label="Alignment method"
+                  value={diffAlignmentMethod}
+                  onChange={(e) => setDiffAlignmentMethod(e.target.value as AlignmentMethod)}
+                  disabled={!diffAlignmentEnabled}
+                >
+                  <option value="nearest">Nearest</option>
+                  <option value="linear">Linear</option>
+                  <option value="pchip">PCHIP</option>
+                </select>
+                <select
+                  aria-label="Target grid"
+                  value={diffTargetGrid}
+                  onChange={(e) => setDiffTargetGrid(e.target.value as 'A' | 'B')}
+                  disabled={!diffAlignmentEnabled}
+                >
+                  <option value="A">Use A grid</option>
+                  <option value="B">Use B grid</option>
+                </select>
+              </div>
+            </div>
+
+            {diffOp === 'A/B' ? (
+              <div>
+                <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Ratio handling</label>
+                <select
+                  aria-label="Ratio handling"
+                  value={diffRatioHandling}
+                  onChange={(e) => setDiffRatioHandling(e.target.value as RatioHandling)}
+                  style={{ width: '100%' }}
+                >
+                  <option value="mask">Mask near-zero denominator</option>
+                </select>
+                <input
+                  aria-label="Denominator threshold"
+                  placeholder="τ (optional)"
+                  value={diffTau}
+                  onChange={(e) => setDiffTau(e.target.value)}
+                  style={{ width: '100%', marginTop: '0.5rem' }}
+                />
+              </div>
+            ) : null}
+
+            <div style={{ fontSize: '0.9rem' }}>
+              <div>
+                A: <strong>{diffA ? displayTraceName(diffA) : '(none)'}</strong>
+              </div>
+              <div>
+                B: <strong>{diffB ? displayTraceName(diffB) : '(none)'}</strong>
+              </div>
+            </div>
+
+            <button type="button" onClick={onComputeDifferential} disabled={!diffA || !diffB} style={{ cursor: 'pointer' }}>
+              Compute
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ marginTop: '0.75rem', borderTop: '1px solid #e5e7eb', paddingTop: '0.75rem' }}>
+        <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Feature Finder (CAP-09)</div>
+        <div style={{ fontSize: '0.9rem', opacity: 0.9 }}>
+          Runs on the selected trace(s) exactly as displayed (mode: {featureMode}, x unit: {xUnitLabel}).
+        </div>
+
+        {featureError ? (
+          <div style={{ border: '1px solid #e5e7eb', padding: '0.5rem', marginTop: '0.5rem' }}>
+            <p style={{ color: 'crimson', margin: 0 }}>{featureError}</p>
+          </div>
+        ) : null}
+
+        <div style={{ display: 'grid', gap: '0.5rem', marginTop: '0.5rem' }}>
+          <div>
+            <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Trace(s)</label>
+            <select
+              aria-label="Feature traces"
+              multiple
+              value={featureTraceKeys}
+              onChange={(e) =>
+                setFeatureTraceKeys(Array.from(e.target.selectedOptions).map((o) => (o as HTMLOptionElement).value))
+              }
+              style={{ width: '100%', minHeight: 72 }}
+              disabled={!featureTraceOptions.length}
+            >
+              {featureTraceOptions.map((t) => (
+                <option key={t.key} value={t.key}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Mode</label>
+            <select
+              aria-label="Feature mode"
+              value={featureMode}
+              onChange={(e) => setFeatureMode(e.target.value as FeatureMode)}
+              style={{ width: '100%' }}
+            >
+              <option value="peaks">Peaks (maxima)</option>
+              <option value="dips">Dips (minima)</option>
+            </select>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+            <div>
+              <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Prominence ≥</label>
+              <input
+                aria-label="Feature prominence"
+                placeholder="(optional)"
+                value={featureProminence}
+                onChange={(e) => setFeatureProminence(e.target.value)}
+                style={{ width: '100%' }}
+              />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Min separation</label>
+              <input
+                aria-label="Feature min separation"
+                placeholder={`(${xUnitLabel})`}
+                value={featureMinSeparation}
+                onChange={(e) => setFeatureMinSeparation(e.target.value)}
+                style={{ width: '100%' }}
+              />
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <button type="button" onClick={onRunFeatureFinder} disabled={featureBusy || !featureTraceKeys.length} style={{ cursor: 'pointer' }}>
+              {featureBusy ? 'Finding…' : 'Run'}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setFeatureResults([])
+                setSelectedFeatureIds([])
+                setFeatureError(null)
+                setHighlightedFeatureRowId(null)
+                setMatchResults([])
+                setMatchError(null)
+              }}
+              disabled={featureBusy || (!featureResults.length && !featureError)}
+              style={{ cursor: 'pointer' }}
+            >
+              Clear
+            </button>
+          </div>
+
+          {featureResults.length ? (
+            <div style={{ marginTop: '0.25rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem', alignItems: 'center' }}>
+                <div style={{ fontWeight: 700 }}>Results ({featureResults.length})</div>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedFeatureIds(featureResults.map((f) => `${f.trace_key}:${f.feature_id}`))}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    Select all
+                  </button>
+                  <button type="button" onClick={() => setSelectedFeatureIds([])} style={{ cursor: 'pointer' }}>
+                    Select none
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ marginTop: '0.25rem', maxHeight: 180, overflow: 'auto', border: '1px solid #e5e7eb' }}>
+                <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>Use</th>
+                      <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>x</th>
+                      <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>prom</th>
+                      <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>trace</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {featureResults.map((f) => {
+                      const id = `${f.trace_key}:${f.feature_id}`
+                      const checked = selectedFeatureIds.includes(id)
+                      const highlighted = highlightedFeatureRowId === id
+                      return (
+                        <tr
+                          key={id}
+                          onClick={() => setHighlightedFeatureRowId((prev) => (prev === id ? null : id))}
+                          style={{ cursor: 'pointer', background: highlighted ? '#f3f4f6' : undefined }}
+                        >
+                          <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>
+                            <input
+                              type="checkbox"
+                              onClick={(e) => e.stopPropagation()}
+                              checked={checked}
+                              onChange={(e) => {
+                                const next = e.target.checked
+                                setSelectedFeatureIds((prev) => (next ? [...prev, id] : prev.filter((x) => x !== id)))
+                              }}
+                            />
+                          </td>
+                          <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>
+                            {Number.isFinite(f.center_x) ? f.center_x.toFixed(6) : ''}
+                          </td>
+                          <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>
+                            {typeof f.prominence === 'number' ? f.prominence.toFixed(3) : ''}
+                          </td>
+                          <td title={f.trace_name} style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>
+                            {f.trace_kind === 'derived' ? 'derived' : 'original'}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <button
+                type="button"
+                onClick={onConvertSelectedFeaturesToAnnotations}
+                disabled={!selectedFeatureIds.length}
+                style={{ marginTop: '0.5rem', cursor: 'pointer' }}
+              >
+                Convert selected to annotations
+              </button>
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      <div style={{ marginTop: '0.75rem', borderTop: '1px solid #e5e7eb', paddingTop: '0.75rem' }}>
+        <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Match (CAP-09)</div>
+        <div style={{ fontSize: '0.9rem', opacity: 0.9 }}>
+          Matches features to a reference: line lists (tolerance window) or band/range intervals.
+        </div>
+
+        {matchError ? (
+          <div style={{ border: '1px solid #e5e7eb', padding: '0.5rem', marginTop: '0.5rem' }}>
+            <p style={{ color: 'crimson', margin: 0 }}>{matchError}</p>
+          </div>
+        ) : null}
+
+        <div style={{ display: 'grid', gap: '0.5rem', marginTop: '0.5rem' }}>
+          <div>
+            <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Reference type</label>
+            <select
+              aria-label="Match reference type"
+              value={matchReferenceType}
+              onChange={(e) => {
+                const next = e.target.value as 'line-list' | 'band-ranges'
+                setMatchReferenceType(next)
+                setMatchResults([])
+                setMatchError(null)
+                setMatchReferenceDatasetId('')
+                setMatchReferenceInfo(null)
+              }}
+              style={{ width: '100%' }}
+            >
+              <option value="line-list">Line list</option>
+              <option value="band-ranges">Band/range (from range annotations)</option>
+            </select>
+          </div>
+
+          <div>
+            <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Reference dataset</label>
+            <select
+              aria-label="Match reference dataset"
+              value={matchReferenceDatasetId}
+              onChange={(e) => {
+                setMatchReferenceDatasetId(e.target.value)
+                setMatchReferenceInfo(null)
+                setMatchResults([])
+                setMatchError(null)
+              }}
+              style={{ width: '100%' }}
+              disabled={matchReferenceType === 'line-list' ? !matchReferenceOptions.length : !matchBandRangeOptions.length}
+            >
+              <option value="">(select a reference)</option>
+              {(matchReferenceType === 'line-list' ? matchReferenceOptions : matchBandRangeOptions).map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {matchReferenceType === 'line-list' ? (
+            <div>
+              <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Tolerance (±)</label>
+              <input
+                aria-label="Match tolerance"
+                placeholder={`(${xUnitLabel})`}
+                value={matchTolerance}
+                onChange={(e) => setMatchTolerance(e.target.value)}
+                style={{ width: '100%' }}
+              />
+            </div>
+          ) : null}
+
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              onClick={onRunMatch}
+              disabled={
+                matchBusy ||
+                !matchReferenceDatasetId ||
+                !featureResults.length ||
+                (matchReferenceType === 'line-list' && !matchTolerance.trim())
+              }
+              style={{ cursor: 'pointer' }}
+            >
+              {matchBusy ? 'Matching…' : 'Run match'}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setMatchResults([])
+                setMatchError(null)
+              }}
+              disabled={matchBusy || (!matchResults.length && !matchError)}
+              style={{ cursor: 'pointer' }}
+            >
+              Clear
+            </button>
+          </div>
+
+          {matchResults.length ? (
+            <div style={{ marginTop: '0.25rem' }}>
+              <div style={{ fontWeight: 700 }}>Results ({matchResults.length})</div>
+              <div style={{ fontSize: '0.85rem', opacity: 0.9 }}>
+                Using {selectedFeatureIds.length ? 'selected features' : 'all detected features'};{' '}
+                {matchReferenceType === 'line-list'
+                  ? 'window = [x−Δx, x+Δx].'
+                  : 'match = feature center inside a reference interval.'}
+              </div>
+
+              {matchReferenceInfo ? (
+                <div style={{ marginTop: '0.25rem', fontSize: '0.85rem', opacity: 0.9 }}>
+                  <div>
+                    Reference: <strong>{matchReferenceInfo.source_name ?? 'Unknown'}</strong>
+                    {matchReferenceInfo.data_type ? ` (${matchReferenceInfo.data_type})` : ''}
+                  </div>
+                  {matchReferenceInfo.source_url ? (
+                    <div>
+                      URL:{' '}
+                      <a href={matchReferenceInfo.source_url} target="_blank" rel="noreferrer">
+                        {matchReferenceInfo.source_url}
+                      </a>
+                    </div>
+                  ) : null}
+                  {matchReferenceInfo.retrieved_at ? <div>Retrieved: {matchReferenceInfo.retrieved_at}</div> : null}
+                  {matchReferenceInfo.citation_text ? <div>Citation: {matchReferenceInfo.citation_text}</div> : null}
+                </div>
+              ) : null}
+
+              <div style={{ marginTop: '0.25rem', maxHeight: 200, overflow: 'auto', border: '1px solid #e5e7eb' }}>
+                <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>x</th>
+                      <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>top candidate</th>
+                      <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>score</th>
+                      <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>cands</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {matchResults.map((m) => {
+                      const top = m.candidates[0]
+                      const second = m.candidates[1]
+                      const ambiguous =
+                        !!top &&
+                        !!second &&
+                        Number.isFinite(top.score) &&
+                        Number.isFinite(second.score) &&
+                        Math.abs(top.score - second.score) <= 0.02
+                      const highlighted = highlightedFeatureRowId === m.feature_row_id
+                      return (
+                        <tr
+                          key={m.feature_row_id}
+                          onClick={() => setHighlightedFeatureRowId((prev) => (prev === m.feature_row_id ? null : m.feature_row_id))}
+                          style={{ cursor: 'pointer', background: highlighted ? '#f3f4f6' : undefined }}
+                        >
+                          <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>
+                            {Number.isFinite(m.feature_center_x_display) ? m.feature_center_x_display.toFixed(6) : ''}
+                          </td>
+                          <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>
+                            {top ? `${top.label}${ambiguous ? ' (ambiguous)' : ''}` : '(none)'}
+                          </td>
+                          <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>
+                            {top ? top.score.toFixed(3) : ''}
+                          </td>
+                          <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>
+                            {m.candidates.length}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {selectedMatchResult ? (
+                <div style={{ marginTop: '0.5rem', border: '1px solid #e5e7eb', padding: '0.5rem' }}>
+                  {(() => {
+                    const top = selectedMatchResult.candidates[0]
+                    const second = selectedMatchResult.candidates[1]
+                    const ambiguous =
+                      !!top &&
+                      !!second &&
+                      Number.isFinite(top.score) &&
+                      Number.isFinite(second.score) &&
+                      Math.abs(top.score - second.score) <= 0.02
+                    return (
+                      <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>
+                        Scoring breakdown{ambiguous ? ' (ambiguous)' : ''}
+                      </div>
+                    )
+                  })()}
+                  <div style={{ fontSize: '0.85rem', opacity: 0.9 }}>
+                    Feature x: <strong>{selectedMatchResult.feature_center_x_display.toFixed(6)}</strong> {xUnitLabel}
+                  </div>
+
+                  {matchReferenceType === 'line-list' ? (
+                    <div style={{ fontSize: '0.85rem', opacity: 0.9, marginTop: '0.25rem' }}>
+                      Score: <code>1 − |Δ|/Δx</code> (clamped to [0,1])
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: '0.85rem', opacity: 0.9, marginTop: '0.25rem' }}>
+                      Score: closeness to interval midpoint (normalized by half-width)
+                    </div>
+                  )}
+
+                  <div style={{ marginTop: '0.5rem', maxHeight: 220, overflow: 'auto' }}>
+                    <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+                      <thead>
+                        {matchReferenceType === 'line-list' ? (
+                          <tr>
+                            <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>candidate</th>
+                            <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>x_ref</th>
+                            <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>Δ</th>
+                            <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>score</th>
+                            <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>strength</th>
+                          </tr>
+                        ) : (
+                          <tr>
+                            <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>band</th>
+                            <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>range</th>
+                            <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>score</th>
+                          </tr>
+                        )}
+                      </thead>
+                      <tbody>
+                        {selectedMatchResult.candidates.slice(0, 5).map((c, idx) => {
+                          if (matchReferenceType === 'line-list') {
+                            const xRef = typeof c.x_ref_display === 'number' ? c.x_ref_display.toFixed(6) : ''
+                            const dx = typeof c.delta_display === 'number' ? c.delta_display.toFixed(6) : ''
+                            const strength = typeof c.strength === 'number' ? c.strength.toFixed(3) : ''
+                            return (
+                              <tr key={idx}>
+                                <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>{c.label}</td>
+                                <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>{xRef}</td>
+                                <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>{dx}</td>
+                                <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>{c.score.toFixed(3)}</td>
+                                <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>{strength}</td>
+                              </tr>
+                            )
+                          }
+
+                          const lo =
+                            typeof c.range_x0_display === 'number' && typeof c.range_x1_display === 'number'
+                              ? `${c.range_x0_display.toFixed(6)}–${c.range_x1_display.toFixed(6)} ${xUnitLabel}`
+                              : ''
+                          return (
+                            <tr key={idx}>
+                              <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>{c.label}</td>
+                              <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>{lo}</td>
+                              <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>{c.score.toFixed(3)}</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : null}
+
+              <button
+                type="button"
+                onClick={onApplyTopMatchesToAnnotations}
+                disabled={!matchResults.length}
+                style={{ marginTop: '0.5rem', cursor: 'pointer' }}
+              >
+                Apply top match labels to annotations
+              </button>
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      <div style={{ marginTop: '0.75rem', borderTop: '1px solid #e5e7eb', paddingTop: '0.75rem' }}>
+        <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Annotations (CAP-04)</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
+          <div style={{ fontWeight: 700 }}>Annotations</div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+            <input
+              type="checkbox"
+              aria-label="Show annotations"
+              checked={showAnnotations}
+              onChange={(e) => setShowAnnotations(e.target.checked)}
+            />
+            Show
+          </label>
+        </div>
+
+        <div style={{ marginTop: '0.5rem' }}>
+          <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Add annotation to</label>
+          <select
+            value={newAnnotationDatasetId}
+            onChange={(e) => setNewAnnotationDatasetId(e.target.value)}
+            disabled={visibleDatasetIds.length === 0}
+            style={{ width: '100%' }}
+          >
+            <option value="">(select a visible trace)</option>
+            {visibleDatasetIds.map((id) => (
+              <option key={id} value={id}>
+                {datasetsById.get(id)?.name ?? id}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div style={{ marginTop: '0.5rem' }}>
+          <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Point note</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+            <input aria-label="New point x" placeholder="x" value={newPointX} onChange={(e) => setNewPointX(e.target.value)} />
+            <input
+              aria-label="New point y"
+              placeholder="y (optional)"
+              value={newPointY}
+              onChange={(e) => setNewPointY(e.target.value)}
+            />
+          </div>
+          <input
+            aria-label="New point text"
+            placeholder="note text"
+            value={newPointText}
+            onChange={(e) => setNewPointText(e.target.value)}
+            style={{ width: '100%', marginTop: '0.5rem' }}
+          />
+          <button type="button" onClick={onAddPoint} style={{ marginTop: '0.5rem', cursor: 'pointer' }} disabled={!newAnnotationDatasetId}>
+            Add point note
+          </button>
+        </div>
+
+        <div style={{ marginTop: '0.75rem' }}>
+          <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>X-range highlight</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+            <input aria-label="New range x0" placeholder="x0" value={newRangeX0} onChange={(e) => setNewRangeX0(e.target.value)} />
+            <input aria-label="New range x1" placeholder="x1" value={newRangeX1} onChange={(e) => setNewRangeX1(e.target.value)} />
+          </div>
+          <input
+            aria-label="New range text"
+            placeholder="label"
+            value={newRangeText}
+            onChange={(e) => setNewRangeText(e.target.value)}
+            style={{ width: '100%', marginTop: '0.5rem' }}
+          />
+          <button type="button" onClick={onAddRange} style={{ marginTop: '0.5rem', cursor: 'pointer' }} disabled={!newAnnotationDatasetId}>
+            Add range highlight
+          </button>
+        </div>
+
+        {showAnnotations ? (
+          <div style={{ marginTop: '0.75rem' }}>
+            <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Visible annotations</div>
+            {visibleAnnotations.length ? (
+              <div style={{ display: 'grid', gap: '0.25rem' }}>
+                {visibleAnnotations.map(({ datasetId, datasetName, ann }) => (
+                  <div key={ann.annotation_id} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '0.5rem', alignItems: 'center' }}>
+                    <div title={datasetName} style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      <strong>{ann.type}</strong> — {ann.text}
+                    </div>
+                    <button type="button" onClick={() => onDeleteAnnotation(datasetId, ann.annotation_id)} style={{ cursor: 'pointer' }}>
+                      Delete
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p style={{ marginTop: '0.25rem' }}>No annotations on visible traces.</p>
+            )}
+          </div>
+        ) : null}
+      </div>
+
+      <div style={{ marginTop: '0.75rem', borderTop: '1px solid #e5e7eb', paddingTop: '0.75rem' }}>
+        <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Status</div>
+        <div>Overlay count: {visibleDatasetIds.length}</div>
+        <div>
+          Axes: x ({xUnitLabel}), y ({formatUnit(unitHints.y)})
+        </div>
+        <div>Derived count: {derivedTraces.length}</div>
+      </div>
+
+      <div style={{ marginTop: '0.75rem', borderTop: '1px solid #e5e7eb', paddingTop: '0.75rem' }}>
+        <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Export (CAP-11)</div>
+        <button
+          type="button"
+          onClick={onExportWhatISee}
+          disabled={exportBusy || (visibleDatasetIds.length === 0 && !derivedTraces.some((t) => t.visible))}
+          style={{ cursor: 'pointer' }}
+        >
+          {exportBusy ? 'Exporting…' : 'Export what I see (.zip)'}
+        </button>
+        {exportError ? <p style={{ color: 'crimson', marginTop: '0.5rem' }}>{exportError}</p> : null}
+      </div>
+    </>
+  )
+
   return (
     <section>
       <h1>Plot</h1>
@@ -1661,971 +2693,20 @@ export function PlotPage() {
         Overlay and inspect datasets (CAP-03). CAP-05 transforms are optional and non-destructive (derived traces only).
       </p>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: '1rem' }}>
-        <aside style={{ borderRight: '1px solid #e5e7eb', paddingRight: '1rem' }}>
-          <div>
-            <label htmlFor="trace-filter" style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>
-              Trace filter
-            </label>
-            <input
-              id="trace-filter"
-              aria-label="Trace filter"
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              placeholder="Filter by dataset name"
-              style={{ width: '100%' }}
-            />
-          </div>
+      {rightSlot ? createPortal(<div>{inspectorContent}</div>, rightSlot) : null}
 
-          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem', flexWrap: 'wrap' }}>
-            <button type="button" onClick={onShowAll} style={{ cursor: 'pointer' }}>
-              Show all
-            </button>
-            <button type="button" onClick={onHideAll} style={{ cursor: 'pointer' }}>
-              Hide all
-            </button>
-          </div>
-
-          <div style={{ marginTop: '0.75rem' }}>
-            <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Traces</div>
-            {busy ? <p>Loading datasets…</p> : null}
-            {error ? <p style={{ color: 'crimson' }}>{error}</p> : null}
-            {warning ? <p>{warning}</p> : null}
-
-            {filteredTraceRows.length ? (
-              <div style={{ display: 'grid', gap: '0.25rem' }}>
-                <div style={{ fontWeight: 700, marginTop: '0.25rem' }}>Original</div>
-                {filteredTraceRows.map(({ t, meta }) => (
-                  <div
-                    key={t.datasetId}
-                    style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto', gap: '0.5rem', alignItems: 'center' }}
-                  >
-                    <input
-                      type="checkbox"
-                      aria-label={`Toggle ${meta?.name ?? t.datasetId}`}
-                      checked={t.visible}
-                      onChange={(e) => onToggleDataset(t.datasetId, e.target.checked)}
-                    />
-                    <div title={meta?.name ?? t.datasetId} style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {meta?.name ?? t.datasetId}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => onIsolate(t.datasetId)}
-                      disabled={!t.visible && visibleDatasetIds.length === 0}
-                      style={{ cursor: 'pointer' }}
-                    >
-                      Isolate
-                    </button>
-                  </div>
-                ))}
-
-                {derivedTraces.length ? (
-                  <>
-                    <div style={{ fontWeight: 700, marginTop: '0.5rem' }}>Derived</div>
-                    {derivedTraces.map((t) => (
-                      <div
-                        key={t.traceId}
-                        style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '0.5rem', alignItems: 'center' }}
-                      >
-                        <input
-                          type="checkbox"
-                          aria-label={`Toggle ${t.name}`}
-                          checked={t.visible}
-                          onChange={(e) => onToggleDerived(t.traceId, e.target.checked)}
-                        />
-                        <div title={t.name} style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {t.name}
-                        </div>
-                      </div>
-                    ))}
-                  </>
-                ) : null}
-              </div>
-            ) : (
-              <p style={{ marginTop: '0.25rem' }}>
-                No datasets found. Import one in Library first.
-              </p>
-            )}
-          </div>
-
-          <div style={{ marginTop: '0.75rem', borderTop: '1px solid #e5e7eb', paddingTop: '0.75rem' }}>
-            <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Transforms (CAP-05)</div>
-
-            <div style={{ marginTop: '0.5rem' }}>
-              <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Targets</label>
-              {visibleDatasetIds.length ? (
-                <div style={{ display: 'grid', gap: '0.25rem' }}>
-                  {visibleDatasetIds.map((id) => (
-                    <label key={id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <input
-                        type="checkbox"
-                        checked={selectedTransformDatasetIds.includes(id)}
-                        onChange={(e) => toggleTransformTarget(id, e.target.checked)}
-                      />
-                      <span>{datasetsById.get(id)?.name ?? id}</span>
-                    </label>
-                  ))}
-                </div>
-              ) : (
-                <p style={{ marginTop: '0.25rem' }}>Select a trace to enable transforms.</p>
-              )}
-            </div>
-
-            <div style={{ marginTop: '0.5rem' }}>
-              <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>X unit display (view-only)</label>
-              <select
-                aria-label="X unit display"
-                value={displayXUnit}
-                onChange={(e) => setDisplayXUnit(e.target.value as DisplayXUnit)}
-                style={{ width: '100%' }}
-              >
-                <option value="as-imported">As imported</option>
-                <option value="nm" disabled={!xUnitIsKnown}>
-                  nm
-                </option>
-                <option value="Å" disabled={!xUnitIsKnown}>
-                  Å
-                </option>
-                <option value="µm" disabled={!xUnitIsKnown}>
-                  µm
-                </option>
-                <option value="cm⁻¹" disabled={!xUnitIsKnown}>
-                  cm⁻¹
-                </option>
-              </select>
-              {!xUnitIsKnown ? (
-                <p style={{ marginTop: '0.25rem' }}>X unit unknown; conversion disabled until metadata is set.</p>
-              ) : null}
-            </div>
-
-            <div style={{ marginTop: '0.5rem' }}>
-              <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Y normalization/scaling</label>
-              <select
-                aria-label="Y normalization"
-                value={normMode}
-                onChange={(e) => setNormMode(e.target.value as NormalizationMode)}
-                style={{ width: '100%' }}
-              >
-                <option value="none">None</option>
-                <option value="max">Max normalization</option>
-                <option value="min-max">Min-max scaling</option>
-                <option value="z-score">Z-score</option>
-                <option value="area">Area normalization</option>
-              </select>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginTop: '0.5rem' }}>
-                <input
-                  aria-label="Normalization range x0"
-                  placeholder={`x0 (${xUnitLabel}) optional`}
-                  value={normRangeX0}
-                  onChange={(e) => setNormRangeX0(e.target.value)}
-                />
-                <input
-                  aria-label="Normalization range x1"
-                  placeholder={`x1 (${xUnitLabel}) optional`}
-                  value={normRangeX1}
-                  onChange={(e) => setNormRangeX1(e.target.value)}
-                />
-              </div>
-            </div>
-
-            <div style={{ marginTop: '0.5rem' }}>
-              <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Baseline correction</label>
-              <select
-                aria-label="Baseline correction"
-                value={baselineMode}
-                onChange={(e) => setBaselineMode(e.target.value as BaselineMode)}
-                style={{ width: '100%' }}
-              >
-                <option value="none">None</option>
-                <option value="poly">Polynomial baseline</option>
-              </select>
-
-              {baselineMode === 'poly' ? (
-                <>
-                  <input
-                    aria-label="Baseline polynomial order"
-                    placeholder="order (e.g. 1)"
-                    value={baselineOrder}
-                    onChange={(e) => setBaselineOrder(e.target.value)}
-                    style={{ width: '100%', marginTop: '0.5rem' }}
-                  />
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.5rem' }}>
-                    <input
-                      type="checkbox"
-                      checked={includeBaselineTrace}
-                      onChange={(e) => setIncludeBaselineTrace(e.target.checked)}
-                    />
-                    Include baseline trace
-                  </label>
-                </>
-              ) : null}
-            </div>
-
-            <div style={{ marginTop: '0.5rem' }}>
-              <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Smoothing (optional)</label>
-              <select
-                aria-label="Smoothing"
-                value={smoothingMode}
-                onChange={(e) => setSmoothingMode(e.target.value as SmoothingMode)}
-                style={{ width: '100%' }}
-              >
-                <option value="none">Off</option>
-                <option value="savgol">Savitzky-Golay</option>
-              </select>
-
-              {smoothingMode === 'savgol' ? (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginTop: '0.5rem' }}>
-                  <input
-                    aria-label="Savitzky-Golay window length"
-                    placeholder="window (odd)"
-                    value={savgolWindow}
-                    onChange={(e) => setSavgolWindow(e.target.value)}
-                  />
-                  <input
-                    aria-label="Savitzky-Golay polyorder"
-                    placeholder="polyorder"
-                    value={savgolPolyorder}
-                    onChange={(e) => setSavgolPolyorder(e.target.value)}
-                  />
-                </div>
-              ) : null}
-            </div>
-
-            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem', flexWrap: 'wrap' }}>
-              <button type="button" onClick={onApplyTransforms} disabled={!selectedTransformDatasetIds.length} style={{ cursor: 'pointer' }}>
-                Apply
-              </button>
-              <button type="button" onClick={clearLastDerived} disabled={!derivedTraces.length} style={{ cursor: 'pointer' }}>
-                Clear last derived
-              </button>
-              <button type="button" onClick={clearAllDerived} disabled={!derivedTraces.length} style={{ cursor: 'pointer' }}>
-                Clear all derived
-              </button>
-              <button type="button" onClick={onSaveDerivedToLibrary} disabled={!derivedTraces.length} style={{ cursor: 'pointer' }}>
-                Save derived to Library
-              </button>
-            </div>
-
-            <div style={{ marginTop: '0.75rem', borderTop: '1px solid #e5e7eb', paddingTop: '0.75rem' }}>
-              <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Differential (CAP-06)</div>
-
-              <div style={{ display: 'grid', gap: '0.5rem' }}>
-                <div>
-                  <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Trace A</label>
-                  <select
-                    aria-label="Trace A"
-                    value={diffA}
-                    onChange={(e) => !diffLockA && setDiffA(e.target.value)}
-                    disabled={diffLockA}
-                    style={{ width: '100%' }}
-                  >
-                    <option value="">(select)</option>
-                    {differentialOptions.map((o) => (
-                      <option key={o.key} value={o.key}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </select>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.25rem' }}>
-                    <input type="checkbox" checked={diffLockA} onChange={(e) => setDiffLockA(e.target.checked)} />
-                    Lock A
-                  </label>
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Trace B</label>
-                  <select
-                    aria-label="Trace B"
-                    value={diffB}
-                    onChange={(e) => !diffLockB && setDiffB(e.target.value)}
-                    disabled={diffLockB}
-                    style={{ width: '100%' }}
-                  >
-                    <option value="">(select)</option>
-                    {differentialOptions.map((o) => (
-                      <option key={o.key} value={o.key}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </select>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.25rem' }}>
-                    <input type="checkbox" checked={diffLockB} onChange={(e) => setDiffLockB(e.target.checked)} />
-                    Lock B
-                  </label>
-                </div>
-
-                <button type="button" onClick={onSwapDiff} style={{ cursor: 'pointer' }}>
-                  Swap A ↔ B
-                </button>
-
-                <div>
-                  <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Operation</label>
-                  <select aria-label="Differential operation" value={diffOp} onChange={(e) => setDiffOp(e.target.value as DifferentialOp)} style={{ width: '100%' }}>
-                    <option value="A-B">A−B</option>
-                    <option value="A/B">A/B</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                    <input
-                      type="checkbox"
-                      checked={diffAlignmentEnabled}
-                      onChange={(e) => setDiffAlignmentEnabled(e.target.checked)}
-                    />
-                    Enable alignment (interpolation)
-                  </label>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginTop: '0.5rem' }}>
-                    <select
-                      aria-label="Alignment method"
-                      value={diffAlignmentMethod}
-                      onChange={(e) => setDiffAlignmentMethod(e.target.value as AlignmentMethod)}
-                      disabled={!diffAlignmentEnabled}
-                    >
-                      <option value="nearest">Nearest</option>
-                      <option value="linear">Linear</option>
-                      <option value="pchip">PCHIP</option>
-                    </select>
-                    <select
-                      aria-label="Target grid"
-                      value={diffTargetGrid}
-                      onChange={(e) => setDiffTargetGrid(e.target.value as 'A' | 'B')}
-                      disabled={!diffAlignmentEnabled}
-                    >
-                      <option value="A">Use A grid</option>
-                      <option value="B">Use B grid</option>
-                    </select>
-                  </div>
-                </div>
-
-                {diffOp === 'A/B' ? (
-                  <div>
-                    <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Ratio handling</label>
-                    <select
-                      aria-label="Ratio handling"
-                      value={diffRatioHandling}
-                      onChange={(e) => setDiffRatioHandling(e.target.value as RatioHandling)}
-                      style={{ width: '100%' }}
-                    >
-                      <option value="mask">Mask near-zero denominator</option>
-                    </select>
-                    <input
-                      aria-label="Denominator threshold"
-                      placeholder="τ (optional)"
-                      value={diffTau}
-                      onChange={(e) => setDiffTau(e.target.value)}
-                      style={{ width: '100%', marginTop: '0.5rem' }}
-                    />
-                  </div>
-                ) : null}
-
-                <div style={{ fontSize: '0.9rem' }}>
-                  <div>
-                    A: <strong>{diffA ? displayTraceName(diffA) : '(none)'}</strong>
-                  </div>
-                  <div>
-                    B: <strong>{diffB ? displayTraceName(diffB) : '(none)'}</strong>
-                  </div>
-                </div>
-
-                <button type="button" onClick={onComputeDifferential} disabled={!diffA || !diffB} style={{ cursor: 'pointer' }}>
-                  Compute
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div style={{ marginTop: '0.75rem', borderTop: '1px solid #e5e7eb', paddingTop: '0.75rem' }}>
-            <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Feature Finder (CAP-09)</div>
-            <div style={{ fontSize: '0.9rem', opacity: 0.9 }}>
-              Runs on the selected trace(s) exactly as displayed (mode: {featureMode}, x unit: {xUnitLabel}).
-            </div>
-
-            {featureError ? (
-              <div style={{ border: '1px solid #e5e7eb', padding: '0.5rem', marginTop: '0.5rem' }}>
-                <p style={{ color: 'crimson', margin: 0 }}>{featureError}</p>
-              </div>
-            ) : null}
-
-            <div style={{ display: 'grid', gap: '0.5rem', marginTop: '0.5rem' }}>
-              <div>
-                <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Trace(s)</label>
-                <select
-                  aria-label="Feature traces"
-                  multiple
-                  value={featureTraceKeys}
-                  onChange={(e) =>
-                    setFeatureTraceKeys(Array.from(e.target.selectedOptions).map((o) => (o as HTMLOptionElement).value))
-                  }
-                  style={{ width: '100%', minHeight: 72 }}
-                  disabled={!featureTraceOptions.length}
-                >
-                  {featureTraceOptions.map((t) => (
-                    <option key={t.key} value={t.key}>
-                      {t.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Mode</label>
-                <select
-                  aria-label="Feature mode"
-                  value={featureMode}
-                  onChange={(e) => setFeatureMode(e.target.value as FeatureMode)}
-                  style={{ width: '100%' }}
-                >
-                  <option value="peaks">Peaks (maxima)</option>
-                  <option value="dips">Dips (minima)</option>
-                </select>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
-                <div>
-                  <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Prominence ≥</label>
-                  <input
-                    aria-label="Feature prominence"
-                    placeholder="(optional)"
-                    value={featureProminence}
-                    onChange={(e) => setFeatureProminence(e.target.value)}
-                    style={{ width: '100%' }}
-                  />
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Min separation</label>
-                  <input
-                    aria-label="Feature min separation"
-                    placeholder={`(${xUnitLabel})`}
-                    value={featureMinSeparation}
-                    onChange={(e) => setFeatureMinSeparation(e.target.value)}
-                    style={{ width: '100%' }}
-                  />
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                <button type="button" onClick={onRunFeatureFinder} disabled={featureBusy || !featureTraceKeys.length} style={{ cursor: 'pointer' }}>
-                  {featureBusy ? 'Finding…' : 'Run'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setFeatureResults([])
-                    setSelectedFeatureIds([])
-                    setFeatureError(null)
-                    setHighlightedFeatureRowId(null)
-                    setMatchResults([])
-                    setMatchError(null)
-                  }}
-                  disabled={featureBusy || (!featureResults.length && !featureError)}
-                  style={{ cursor: 'pointer' }}
-                >
-                  Clear
-                </button>
-              </div>
-
-              {featureResults.length ? (
-                <div style={{ marginTop: '0.25rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem', alignItems: 'center' }}>
-                    <div style={{ fontWeight: 700 }}>Results ({featureResults.length})</div>
-                    <div style={{ display: 'flex', gap: '0.5rem' }}>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedFeatureIds(featureResults.map((f) => `${f.trace_key}:${f.feature_id}`))}
-                        style={{ cursor: 'pointer' }}
-                      >
-                        Select all
-                      </button>
-                      <button type="button" onClick={() => setSelectedFeatureIds([])} style={{ cursor: 'pointer' }}>
-                        Select none
-                      </button>
-                    </div>
-                  </div>
-
-                  <div style={{ marginTop: '0.25rem', maxHeight: 180, overflow: 'auto', border: '1px solid #e5e7eb' }}>
-                    <table style={{ borderCollapse: 'collapse', width: '100%' }}>
-                      <thead>
-                        <tr>
-                          <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>Use</th>
-                          <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>x</th>
-                          <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>prom</th>
-                          <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>trace</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {featureResults.map((f) => {
-                          const id = `${f.trace_key}:${f.feature_id}`
-                          const checked = selectedFeatureIds.includes(id)
-                          const highlighted = highlightedFeatureRowId === id
-                          return (
-                            <tr
-                              key={id}
-                              onClick={() => setHighlightedFeatureRowId((prev) => (prev === id ? null : id))}
-                              style={{ cursor: 'pointer', background: highlighted ? '#f3f4f6' : undefined }}
-                            >
-                              <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>
-                                <input
-                                  type="checkbox"
-                                  onClick={(e) => e.stopPropagation()}
-                                  checked={checked}
-                                  onChange={(e) => {
-                                    const next = e.target.checked
-                                    setSelectedFeatureIds((prev) =>
-                                      next ? [...prev, id] : prev.filter((x) => x !== id),
-                                    )
-                                  }}
-                                />
-                              </td>
-                              <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>
-                                {Number.isFinite(f.center_x) ? f.center_x.toFixed(6) : ''}
-                              </td>
-                              <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>
-                                {typeof f.prominence === 'number' ? f.prominence.toFixed(3) : ''}
-                              </td>
-                              <td title={f.trace_name} style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>
-                                {f.trace_kind === 'derived' ? 'derived' : 'original'}
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={onConvertSelectedFeaturesToAnnotations}
-                    disabled={!selectedFeatureIds.length}
-                    style={{ marginTop: '0.5rem', cursor: 'pointer' }}
-                  >
-                    Convert selected to annotations
-                  </button>
-                </div>
-              ) : null}
-            </div>
-          </div>
-
-          <div style={{ marginTop: '0.75rem', borderTop: '1px solid #e5e7eb', paddingTop: '0.75rem' }}>
-            <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Match (CAP-09)</div>
-            <div style={{ fontSize: '0.9rem', opacity: 0.9 }}>
-              Matches features to a reference: line lists (tolerance window) or band/range intervals.
-            </div>
-
-            {matchError ? (
-              <div style={{ border: '1px solid #e5e7eb', padding: '0.5rem', marginTop: '0.5rem' }}>
-                <p style={{ color: 'crimson', margin: 0 }}>{matchError}</p>
-              </div>
-            ) : null}
-
-            <div style={{ display: 'grid', gap: '0.5rem', marginTop: '0.5rem' }}>
-              <div>
-                <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Reference type</label>
-                <select
-                  aria-label="Match reference type"
-                  value={matchReferenceType}
-                  onChange={(e) => {
-                    const next = e.target.value as 'line-list' | 'band-ranges'
-                    setMatchReferenceType(next)
-                    setMatchResults([])
-                    setMatchError(null)
-                    setMatchReferenceDatasetId('')
-                    setMatchReferenceInfo(null)
-                  }}
-                  style={{ width: '100%' }}
-                >
-                  <option value="line-list">Line list</option>
-                  <option value="band-ranges">Band/range (from range annotations)</option>
-                </select>
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Reference dataset</label>
-                <select
-                  aria-label="Match reference dataset"
-                  value={matchReferenceDatasetId}
-                  onChange={(e) => {
-                    setMatchReferenceDatasetId(e.target.value)
-                    setMatchReferenceInfo(null)
-                    setMatchResults([])
-                    setMatchError(null)
-                  }}
-                  style={{ width: '100%' }}
-                  disabled={matchReferenceType === 'line-list' ? !matchReferenceOptions.length : !matchBandRangeOptions.length}
-                >
-                  <option value="">(select a reference)</option>
-                  {(matchReferenceType === 'line-list' ? matchReferenceOptions : matchBandRangeOptions).map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {matchReferenceType === 'line-list' ? (
-                <div>
-                  <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Tolerance (±)</label>
-                  <input
-                    aria-label="Match tolerance"
-                    placeholder={`(${xUnitLabel})`}
-                    value={matchTolerance}
-                    onChange={(e) => setMatchTolerance(e.target.value)}
-                    style={{ width: '100%' }}
-                  />
-                </div>
-              ) : null}
-
-              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                <button
-                  type="button"
-                  onClick={onRunMatch}
-                  disabled={matchBusy || !matchReferenceDatasetId || !featureResults.length || (matchReferenceType === 'line-list' && !matchTolerance.trim())}
-                  style={{ cursor: 'pointer' }}
-                >
-                  {matchBusy ? 'Matching…' : 'Run match'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMatchResults([])
-                    setMatchError(null)
-                  }}
-                  disabled={matchBusy || (!matchResults.length && !matchError)}
-                  style={{ cursor: 'pointer' }}
-                >
-                  Clear
-                </button>
-              </div>
-
-              {matchResults.length ? (
-                <div style={{ marginTop: '0.25rem' }}>
-                  <div style={{ fontWeight: 700 }}>Results ({matchResults.length})</div>
-                  <div style={{ fontSize: '0.85rem', opacity: 0.9 }}>
-                    Using {selectedFeatureIds.length ? 'selected features' : 'all detected features'};{' '}
-                    {matchReferenceType === 'line-list'
-                      ? 'window = [x−Δx, x+Δx].'
-                      : 'match = feature center inside a reference interval.'}
-                  </div>
-
-                  {matchReferenceInfo ? (
-                    <div style={{ marginTop: '0.25rem', fontSize: '0.85rem', opacity: 0.9 }}>
-                      <div>
-                        Reference: <strong>{matchReferenceInfo.source_name ?? 'Unknown'}</strong>
-                        {matchReferenceInfo.data_type ? ` (${matchReferenceInfo.data_type})` : ''}
-                      </div>
-                      {matchReferenceInfo.source_url ? (
-                        <div>
-                          URL:{' '}
-                          <a href={matchReferenceInfo.source_url} target="_blank" rel="noreferrer">
-                            {matchReferenceInfo.source_url}
-                          </a>
-                        </div>
-                      ) : null}
-                      {matchReferenceInfo.retrieved_at ? <div>Retrieved: {matchReferenceInfo.retrieved_at}</div> : null}
-                      {matchReferenceInfo.citation_text ? <div>Citation: {matchReferenceInfo.citation_text}</div> : null}
-                    </div>
-                  ) : null}
-
-                  <div style={{ marginTop: '0.25rem', maxHeight: 200, overflow: 'auto', border: '1px solid #e5e7eb' }}>
-                    <table style={{ borderCollapse: 'collapse', width: '100%' }}>
-                      <thead>
-                        <tr>
-                          <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>x</th>
-                          <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>top candidate</th>
-                          <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>score</th>
-                          <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>cands</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {matchResults.map((m) => {
-                          const top = m.candidates[0]
-                          const second = m.candidates[1]
-                          const ambiguous =
-                            !!top &&
-                            !!second &&
-                            Number.isFinite(top.score) &&
-                            Number.isFinite(second.score) &&
-                            Math.abs(top.score - second.score) <= 0.02
-                          const highlighted = highlightedFeatureRowId === m.feature_row_id
-                          return (
-                            <tr
-                              key={m.feature_row_id}
-                              onClick={() => setHighlightedFeatureRowId((prev) => (prev === m.feature_row_id ? null : m.feature_row_id))}
-                              style={{ cursor: 'pointer', background: highlighted ? '#f3f4f6' : undefined }}
-                            >
-                              <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>
-                                {Number.isFinite(m.feature_center_x_display) ? m.feature_center_x_display.toFixed(6) : ''}
-                              </td>
-                              <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>
-                                {top ? `${top.label}${ambiguous ? ' (ambiguous)' : ''}` : '(none)'}
-                              </td>
-                              <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>
-                                {top ? top.score.toFixed(3) : ''}
-                              </td>
-                              <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>
-                                {m.candidates.length}
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {selectedMatchResult ? (
-                    <div style={{ marginTop: '0.5rem', border: '1px solid #e5e7eb', padding: '0.5rem' }}>
-                      {(() => {
-                        const top = selectedMatchResult.candidates[0]
-                        const second = selectedMatchResult.candidates[1]
-                        const ambiguous =
-                          !!top &&
-                          !!second &&
-                          Number.isFinite(top.score) &&
-                          Number.isFinite(second.score) &&
-                          Math.abs(top.score - second.score) <= 0.02
-                        return (
-                          <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>
-                            Scoring breakdown{ambiguous ? ' (ambiguous)' : ''}
-                          </div>
-                        )
-                      })()}
-                      <div style={{ fontSize: '0.85rem', opacity: 0.9 }}>
-                        Feature x: <strong>{selectedMatchResult.feature_center_x_display.toFixed(6)}</strong> {xUnitLabel}
-                      </div>
-
-                      {matchReferenceType === 'line-list' ? (
-                        <div style={{ fontSize: '0.85rem', opacity: 0.9, marginTop: '0.25rem' }}>
-                          Score: <code>1 − |Δ|/Δx</code> (clamped to [0,1])
-                        </div>
-                      ) : (
-                        <div style={{ fontSize: '0.85rem', opacity: 0.9, marginTop: '0.25rem' }}>
-                          Score: closeness to interval midpoint (normalized by half-width)
-                        </div>
-                      )}
-
-                      <div style={{ marginTop: '0.5rem', maxHeight: 220, overflow: 'auto' }}>
-                        <table style={{ borderCollapse: 'collapse', width: '100%' }}>
-                          <thead>
-                            {matchReferenceType === 'line-list' ? (
-                              <tr>
-                                <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>candidate</th>
-                                <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>x_ref</th>
-                                <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>Δ</th>
-                                <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>score</th>
-                                <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>strength</th>
-                              </tr>
-                            ) : (
-                              <tr>
-                                <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>band</th>
-                                <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>range</th>
-                                <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>score</th>
-                              </tr>
-                            )}
-                          </thead>
-                          <tbody>
-                            {selectedMatchResult.candidates.slice(0, 5).map((c, idx) => {
-                              if (matchReferenceType === 'line-list') {
-                                const xRef = typeof c.x_ref_display === 'number' ? c.x_ref_display.toFixed(6) : ''
-                                const dx = typeof c.delta_display === 'number' ? c.delta_display.toFixed(6) : ''
-                                const strength = typeof c.strength === 'number' ? c.strength.toFixed(3) : ''
-                                return (
-                                  <tr key={idx}>
-                                    <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>{c.label}</td>
-                                    <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>{xRef}</td>
-                                    <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>{dx}</td>
-                                    <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>{c.score.toFixed(3)}</td>
-                                    <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>{strength}</td>
-                                  </tr>
-                                )
-                              }
-
-                              const lo =
-                                typeof c.range_x0_display === 'number' && typeof c.range_x1_display === 'number'
-                                  ? `${c.range_x0_display.toFixed(6)}–${c.range_x1_display.toFixed(6)} ${xUnitLabel}`
-                                  : ''
-                              return (
-                                <tr key={idx}>
-                                  <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>{c.label}</td>
-                                  <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>{lo}</td>
-                                  <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>{c.score.toFixed(3)}</td>
-                                </tr>
-                              )
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  ) : null}
-
-                  <button
-                    type="button"
-                    onClick={onApplyTopMatchesToAnnotations}
-                    disabled={!matchResults.length}
-                    style={{ marginTop: '0.5rem', cursor: 'pointer' }}
-                  >
-                    Apply top match labels to annotations
-                  </button>
-                </div>
-              ) : null}
-            </div>
-          </div>
-
-          <div style={{ marginTop: '0.75rem', borderTop: '1px solid #e5e7eb', paddingTop: '0.75rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
-              <div style={{ fontWeight: 700 }}>Annotations</div>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                <input
-                  type="checkbox"
-                  aria-label="Show annotations"
-                  checked={showAnnotations}
-                  onChange={(e) => setShowAnnotations(e.target.checked)}
-                />
-                Show
-              </label>
-            </div>
-
-            <div style={{ marginTop: '0.5rem' }}>
-              <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>
-                Add annotation to
-              </label>
-              <select
-                value={newAnnotationDatasetId}
-                onChange={(e) => setNewAnnotationDatasetId(e.target.value)}
-                disabled={visibleDatasetIds.length === 0}
-                style={{ width: '100%' }}
-              >
-                <option value="">(select a visible trace)</option>
-                {visibleDatasetIds.map((id) => (
-                  <option key={id} value={id}>
-                    {datasetsById.get(id)?.name ?? id}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div style={{ marginTop: '0.5rem' }}>
-              <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Point note</div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
-                <input
-                  aria-label="New point x"
-                  placeholder="x"
-                  value={newPointX}
-                  onChange={(e) => setNewPointX(e.target.value)}
-                />
-                <input
-                  aria-label="New point y"
-                  placeholder="y (optional)"
-                  value={newPointY}
-                  onChange={(e) => setNewPointY(e.target.value)}
-                />
-              </div>
-              <input
-                aria-label="New point text"
-                placeholder="note text"
-                value={newPointText}
-                onChange={(e) => setNewPointText(e.target.value)}
-                style={{ width: '100%', marginTop: '0.5rem' }}
-              />
-              <button
-                type="button"
-                onClick={onAddPoint}
-                style={{ marginTop: '0.5rem', cursor: 'pointer' }}
-                disabled={!newAnnotationDatasetId}
-              >
-                Add point note
-              </button>
-            </div>
-
-            <div style={{ marginTop: '0.75rem' }}>
-              <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>X-range highlight</div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
-                <input
-                  aria-label="New range x0"
-                  placeholder="x0"
-                  value={newRangeX0}
-                  onChange={(e) => setNewRangeX0(e.target.value)}
-                />
-                <input
-                  aria-label="New range x1"
-                  placeholder="x1"
-                  value={newRangeX1}
-                  onChange={(e) => setNewRangeX1(e.target.value)}
-                />
-              </div>
-              <input
-                aria-label="New range text"
-                placeholder="label"
-                value={newRangeText}
-                onChange={(e) => setNewRangeText(e.target.value)}
-                style={{ width: '100%', marginTop: '0.5rem' }}
-              />
-              <button
-                type="button"
-                onClick={onAddRange}
-                style={{ marginTop: '0.5rem', cursor: 'pointer' }}
-                disabled={!newAnnotationDatasetId}
-              >
-                Add range highlight
-              </button>
-            </div>
-
-            {showAnnotations ? (
-              <div style={{ marginTop: '0.75rem' }}>
-                <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Visible annotations</div>
-                {visibleAnnotations.length ? (
-                  <div style={{ display: 'grid', gap: '0.25rem' }}>
-                    {visibleAnnotations.map(({ datasetId, datasetName, ann }) => (
-                      <div
-                        key={ann.annotation_id}
-                        style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '0.5rem', alignItems: 'center' }}
-                      >
-                        <div title={datasetName} style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          <strong>{ann.type}</strong> — {ann.text}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => onDeleteAnnotation(datasetId, ann.annotation_id)}
-                          style={{ cursor: 'pointer' }}
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p style={{ marginTop: '0.25rem' }}>No annotations on visible traces.</p>
-                )}
-              </div>
-            ) : null}
-          </div>
-
-          <div style={{ marginTop: '0.75rem', borderTop: '1px solid #e5e7eb', paddingTop: '0.75rem' }}>
-            <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Status</div>
-            <div>Overlay count: {visibleDatasetIds.length}</div>
-            <div>
-              Axes: x ({xUnitLabel}), y ({formatUnit(unitHints.y)})
-            </div>
-            <div>Derived count: {derivedTraces.length}</div>
-          </div>
-
-          <div style={{ marginTop: '0.75rem', borderTop: '1px solid #e5e7eb', paddingTop: '0.75rem' }}>
-            <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Export (CAP-11)</div>
-            <button
-              type="button"
-              onClick={onExportWhatISee}
-              disabled={
-                exportBusy ||
-                (visibleDatasetIds.length === 0 && !derivedTraces.some((t) => t.visible))
-              }
-              style={{ cursor: 'pointer' }}
-            >
-              {exportBusy ? 'Exporting…' : 'Export what I see (.zip)'}
-            </button>
-            {exportError ? <p style={{ color: 'crimson', marginTop: '0.5rem' }}>{exportError}</p> : null}
-          </div>
-        </aside>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: rightSlot ? '1fr' : '320px 1fr',
+          gap: '1rem',
+        }}
+      >
+        {!rightSlot ? (
+          <aside style={{ borderRight: '1px solid #e5e7eb', paddingRight: '1rem' }}>
+            {inspectorContent}
+          </aside>
+        ) : null}
 
         <div>
           {visibleDatasetIds.length === 0 ? (
@@ -2634,13 +2715,16 @@ export function PlotPage() {
             </div>
           ) : (
             <div style={{ border: '1px solid #e5e7eb' }}>
-              <Plot
-                data={plotData}
-                layout={plotLayout}
-                config={{ displaylogo: false, responsive: true }}
-                onRelayout={(e) => setPlotlyRelayout(e as Record<string, unknown>)}
-                style={{ width: '100%', height: '520px' }}
-              />
+              <PlotErrorBoundary>
+                <PlotComponent
+                  data={plotData}
+                  layout={plotLayout}
+                  config={{ displaylogo: false, responsive: true }}
+                  onClick={onPlotClick}
+                  onRelayout={(e) => setPlotlyRelayout(e as Record<string, unknown>)}
+                  style={{ width: '100%', height: '520px' }}
+                />
+              </PlotErrorBoundary>
             </div>
           )}
         </div>

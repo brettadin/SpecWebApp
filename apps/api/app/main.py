@@ -175,6 +175,13 @@ async def ingest_commit(
             y=y,
             x_count=len(x),
             warnings=warnings,
+            source_preamble=None,
+            source_metadata={
+                "format": "fits",
+                "hdu_index": str(hdu_index),
+                "x_col_index": str(x_index),
+                "y_col_index": str(y_index),
+            },
         )
     elif ext in (".jdx", ".dx", ".jcamp"):
         from .ingest_preview import ParsedDataset
@@ -224,6 +231,8 @@ async def ingest_commit(
             y=y,
             x_count=len(x),
             warnings=warnings,
+            source_preamble=None,
+            source_metadata=parsed_jc.header,
         )
     else:
         if x_index is None or y_index is None:

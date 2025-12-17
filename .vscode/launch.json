@@ -27,10 +27,30 @@
       "justMyCode": true
     },
     {
+      "name": "API: Debug (uvicorn, no browser)",
+      "type": "python",
+      "request": "launch",
+      "module": "uvicorn",
+      "cwd": "${workspaceFolder}/apps/api",
+      "python": "${workspaceFolder}/apps/api/.venv/Scripts/python.exe",
+      "pythonPath": "${workspaceFolder}/apps/api/.venv/Scripts/python.exe",
+      "args": [
+        "app.main:app",
+        "--reload",
+        "--port",
+        "8000"
+      ],
+      "env": {
+        "PYTHONUNBUFFERED": "1"
+      },
+      "subProcess": true,
+      "justMyCode": true
+    },
+    {
       "name": "Web: Debug (Chrome)",
       "type": "pwa-chrome",
       "request": "launch",
-      "url": "http://localhost:5173",
+      "url": "http://localhost:5173/plot",
       "webRoot": "${workspaceFolder}/apps/web/src",
       "preLaunchTask": "Web: dev",
       "timeout": 60000
@@ -40,7 +60,7 @@
     {
       "name": "Full Stack: Debug",
       "configurations": [
-        "API: Debug (uvicorn)",
+        "API: Debug (uvicorn, no browser)",
         "Web: Debug (Chrome)"
       ]
     }

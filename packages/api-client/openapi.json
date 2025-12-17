@@ -609,6 +609,34 @@
             "title": "Preview Rows",
             "type": "array"
           },
+          "source_metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Metadata"
+          },
+          "source_preamble": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Preamble"
+          },
           "suggested_x_index": {
             "anyOf": [
               {
