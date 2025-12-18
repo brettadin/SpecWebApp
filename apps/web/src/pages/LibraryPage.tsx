@@ -134,7 +134,9 @@ type TelescopeFITSPreviewResponse = {
 }
 
 export function LibraryPage() {
-    const location = useLocation()
+  const location = useLocation()
+  type LibraryTab = 'import' | 'reference' | 'telescope' | 'datasets'
+  const [activeTab, setActiveTab] = useState<LibraryTab>('import')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [refBusy, setRefBusy] = useState(false)
@@ -905,7 +907,56 @@ export function LibraryPage() {
   return (
     <section>
       <h1>Library</h1>
-      <p>Start with a local file import preview (CAP-01). No transforms happen here.</p>
+      <div
+        role="tablist"
+        aria-label="Library sections"
+        style={{
+          display: 'flex',
+          gap: '0.5rem',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          padding: '0.25rem',
+          border: '1px solid rgb(from var(--border) r g b)',
+          borderRadius: '0.5rem',
+          background: 'rgb(from var(--card) r g b)',
+          marginBottom: '0.75rem',
+        }}
+      >
+        {(
+          [
+            { id: 'import', label: 'Import' },
+            { id: 'reference', label: 'Reference' },
+            { id: 'telescope', label: 'Telescope' },
+            { id: 'datasets', label: 'Datasets' },
+          ] as const
+        ).map((t) => {
+          const selected = activeTab === t.id
+          return (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={selected}
+              onClick={() => setActiveTab(t.id)}
+              style={{
+                cursor: 'pointer',
+                padding: '0.35rem 0.6rem',
+                borderRadius: '0.375rem',
+                border: '1px solid rgb(from var(--border) r g b)',
+                background: selected ? 'rgb(from var(--muted) r g b)' : 'transparent',
+                color: 'rgb(from var(--foreground) r g b)',
+                fontWeight: selected ? 700 : 500,
+              }}
+            >
+              {t.label}
+            </button>
+          )
+        })}
+      </div>
+
+      {activeTab === 'import' ? (
+        <>
+          <p>Start with a local file import preview (CAP-01). No transforms happen here.</p>
 
       <label>
         <div style={{ marginTop: '0.5rem', marginBottom: '0.25rem' }}>
@@ -913,7 +964,7 @@ export function LibraryPage() {
         </div>
         <input
           type="file"
-          accept=".csv,.txt,.fits,.fit,.jdx,.dx,.jcamp,text/csv,text/plain,application/fits"
+          accept=".csv,.txt,.fits,.fit,.fts,.fits.gz,.fit.gz,.fts.gz,.jdx,.dx,.jcamp,text/csv,text/plain,application/fits"
           disabled={busy}
           onChange={(e) => onPickFile(e.target.files?.[0] ?? null)}
         />
@@ -1094,7 +1145,28 @@ export function LibraryPage() {
         </div>
       ) : null}
 
-      <div style={{ marginTop: '1.25rem', borderTop: '1px solid #e5e7eb', paddingTop: '1rem' }}>
+          {commitResult ? (
+            <div style={{ marginTop: '1rem' }}>
+              <h2 style={{ fontSize: '1rem' }}>Imported</h2>
+              <pre
+                style={{
+                  background: '#f3f4f6',
+                  padding: '0.75rem',
+                  borderRadius: '0.5rem',
+                  overflow: 'auto',
+                }}
+              >
+                {JSON.stringify(commitResult.dataset, null, 2)}
+              </pre>
+            </div>
+          ) : null}
+        </>
+      ) : null}
+
+      {activeTab === 'reference' ? (
+        <div>
+
+      <div style={{ marginTop: '0.25rem' }}>
         <h2 style={{ fontSize: '1rem' }}>Add reference data (CAP-07)</h2>
         <p style={{ marginTop: '0.25rem' }}>
           Import a reference spectrum by URL (server fetch + parse). Citation text is required.
@@ -1180,8 +1252,13 @@ export function LibraryPage() {
 
         </div>
       </div>
+        </div>
+      ) : null}
 
-      <div style={{ marginTop: '1.25rem', borderTop: '1px solid #e5e7eb', paddingTop: '1rem' }}>
+      {activeTab === 'telescope' ? (
+        <div>
+
+      <div style={{ marginTop: '0.25rem' }}>
         <h2 style={{ fontSize: '1rem' }}>Add telescope data (CAP-08, MAST)</h2>
         <p style={{ marginTop: '0.25rem' }}>
           Search MAST by target name, choose an observation + product, preview extraction candidates, then import with
@@ -1645,92 +1722,91 @@ export function LibraryPage() {
           ) : null}
         </div>
       </div>
-
-      {commitResult ? (
-        <div style={{ marginTop: '1rem' }}>
-          <h2 style={{ fontSize: '1rem' }}>Imported</h2>
-          <pre style={{ background: '#f3f4f6', padding: '0.75rem', borderRadius: '0.5rem', overflow: 'auto' }}>
-            {JSON.stringify(commitResult.dataset, null, 2)}
-          </pre>
         </div>
       ) : null}
 
-      {datasets.length ? (
-        <div style={{ marginTop: '1rem' }}>
-          <h2 style={{ fontSize: '1rem' }}>Datasets</h2>
-          <ul>
-            {datasets.map((d) => (
-              <li key={d.id}>
-                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                  <div>
-                    {d.name} ({d.id})
-                  </div>
-                  <button type="button" onClick={() => void onToggleEditDataset(d.id)} disabled={editBusy}>
-                    {editDatasetId === d.id ? 'Close editor' : 'Edit metadata'}
-                  </button>
-                </div>
-                {d.reference ? (
-                  <div style={{ fontSize: '0.875rem', opacity: 0.85 }}>
-                    Reference{d.reference.data_type ? `: ${d.reference.data_type}` : ''}
-                    {d.reference.source_name ? ` — ${d.reference.source_name}` : ''}
-                    {typeof d.reference.citation_present === 'boolean'
-                      ? ` (citation: ${d.reference.citation_present ? 'yes' : 'no'})`
-                      : ''}
-                    {d.reference.license_redistribution_allowed
-                      ? ` (redistribution: ${d.reference.license_redistribution_allowed})`
-                      : ''}
-                  </div>
-                ) : null}
-
-                {editDatasetId === d.id ? (
-                  <div style={{ marginTop: '0.5rem' }}>
-                    {editError ? (
-                      <div style={{ color: 'crimson', marginBottom: '0.5rem' }}>{editError}</div>
+      {activeTab === 'datasets' ? (
+        <div style={{ marginTop: '0.25rem' }}>
+          {datasets.length ? (
+            <div>
+              <h2 style={{ fontSize: '1rem' }}>Datasets</h2>
+              <ul>
+                {datasets.map((d) => (
+                  <li key={d.id}>
+                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <div>
+                        {d.name} ({d.id})
+                      </div>
+                      <button type="button" onClick={() => void onToggleEditDataset(d.id)} disabled={editBusy}>
+                        {editDatasetId === d.id ? 'Close editor' : 'Edit metadata'}
+                      </button>
+                    </div>
+                    {d.reference ? (
+                      <div style={{ fontSize: '0.875rem', opacity: 0.85 }}>
+                        Reference{d.reference.data_type ? `: ${d.reference.data_type}` : ''}
+                        {d.reference.source_name ? ` — ${d.reference.source_name}` : ''}
+                        {typeof d.reference.citation_present === 'boolean'
+                          ? ` (citation: ${d.reference.citation_present ? 'yes' : 'no'})`
+                          : ''}
+                        {d.reference.license_redistribution_allowed
+                          ? ` (redistribution: ${d.reference.license_redistribution_allowed})`
+                          : ''}
+                      </div>
                     ) : null}
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem' }}>
-                      <label>
-                        <div style={{ marginBottom: '0.25rem' }}>Name</div>
-                        <input
-                          value={editName}
-                          onChange={(e) => setEditName(e.target.value)}
-                          disabled={editBusy}
-                          style={{ width: '100%' }}
-                        />
-                      </label>
-                      <label>
-                        <div style={{ marginBottom: '0.25rem' }}>X unit</div>
-                        <input
-                          value={editXUnit}
-                          onChange={(e) => setEditXUnit(e.target.value)}
-                          disabled={editBusy}
-                          placeholder="(optional)"
-                          style={{ width: '100%' }}
-                        />
-                      </label>
-                      <label>
-                        <div style={{ marginBottom: '0.25rem' }}>Y unit</div>
-                        <input
-                          value={editYUnit}
-                          onChange={(e) => setEditYUnit(e.target.value)}
-                          disabled={editBusy}
-                          placeholder="(optional)"
-                          style={{ width: '100%' }}
-                        />
-                      </label>
-                    </div>
+                    {editDatasetId === d.id ? (
+                      <div style={{ marginTop: '0.5rem' }}>
+                        {editError ? (
+                          <div style={{ color: 'crimson', marginBottom: '0.5rem' }}>{editError}</div>
+                        ) : null}
 
-                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
-                      <button type="button" onClick={() => void onSaveDatasetMetadata()} disabled={editBusy}>
-                        {editBusy ? 'Saving…' : 'Save metadata'}
-                      </button>
-                      <Link to={`/plot?dataset=${encodeURIComponent(d.id)}`}>Open in Plot</Link>
-                    </div>
-                  </div>
-                ) : null}
-              </li>
-            ))}
-          </ul>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem' }}>
+                          <label>
+                            <div style={{ marginBottom: '0.25rem' }}>Name</div>
+                            <input
+                              value={editName}
+                              onChange={(e) => setEditName(e.target.value)}
+                              disabled={editBusy}
+                              style={{ width: '100%' }}
+                            />
+                          </label>
+                          <label>
+                            <div style={{ marginBottom: '0.25rem' }}>X unit</div>
+                            <input
+                              value={editXUnit}
+                              onChange={(e) => setEditXUnit(e.target.value)}
+                              disabled={editBusy}
+                              placeholder="(optional)"
+                              style={{ width: '100%' }}
+                            />
+                          </label>
+                          <label>
+                            <div style={{ marginBottom: '0.25rem' }}>Y unit</div>
+                            <input
+                              value={editYUnit}
+                              onChange={(e) => setEditYUnit(e.target.value)}
+                              disabled={editBusy}
+                              placeholder="(optional)"
+                              style={{ width: '100%' }}
+                            />
+                          </label>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+                          <button type="button" onClick={() => void onSaveDatasetMetadata()} disabled={editBusy}>
+                            {editBusy ? 'Saving…' : 'Save metadata'}
+                          </button>
+                          <Link to={`/plot?dataset=${encodeURIComponent(d.id)}`}>Open in Plot</Link>
+                        </div>
+                      </div>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <div style={{ opacity: 0.85 }}>No datasets yet.</div>
+          )}
         </div>
       ) : null}
     </section>

@@ -16,6 +16,12 @@ const navStyle = ({ isActive }: { isActive: boolean }) => ({
   padding: '0.25rem 0.5rem',
 })
 
+const borderColor = 'rgb(from var(--border) r g b)'
+const cardBg = 'rgb(from var(--card) r g b)'
+const popoverBg = 'rgb(from var(--popover) r g b)'
+const inputBg = 'rgb(from var(--input) r g b)'
+const textMuted = 'rgb(from var(--muted-foreground) r g b)'
+
 function readStoredBool(key: string, fallback: boolean) {
   try {
     const raw = localStorage.getItem(key)
@@ -98,9 +104,21 @@ function AppShell() {
         gridTemplateRows: 'auto 1fr',
         height: '100vh',
         minHeight: 0,
+        background: 'rgb(from var(--background) r g b)',
+        color: 'rgb(from var(--foreground) r g b)',
       }}
     >
-      <header style={{ borderBottom: '1px solid #e5e7eb', padding: '0.75rem 1rem' }}>
+      <header
+        style={{
+          position: 'sticky',
+          top: 0,
+          zIndex: 50,
+          borderBottom: `1px solid ${borderColor}`,
+          padding: '0.75rem 1rem',
+          background: cardBg,
+          backdropFilter: 'blur(8px)',
+        }}
+      >
         <nav style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
           <button
             type="button"
@@ -115,9 +133,10 @@ function AppShell() {
             style={{
               fontWeight: leftCollapsed ? 400 : 700,
               padding: '0.25rem 0.5rem',
-              border: '1px solid #e5e7eb',
+              border: `1px solid ${borderColor}`,
               background: 'transparent',
               cursor: 'pointer',
+              borderRadius: 'var(--radius-sm)',
             }}
             title={leftCollapsed ? 'Show Library panel' : 'Hide Library panel'}
           >
@@ -142,9 +161,10 @@ function AppShell() {
             style={{
               fontWeight: rightCollapsed ? 400 : 700,
               padding: '0.25rem 0.5rem',
-              border: '1px solid #e5e7eb',
+              border: `1px solid ${borderColor}`,
               background: 'transparent',
               cursor: 'pointer',
+              borderRadius: 'var(--radius-sm)',
             }}
             title={rightCollapsed ? 'Show Inspector panel' : 'Hide Inspector panel'}
           >
@@ -186,8 +206,10 @@ function AppShell() {
               style={{
                 width: '100%',
                 padding: '0.25rem 0.5rem',
-                border: '1px solid #e5e7eb',
+                border: `1px solid ${borderColor}`,
                 borderRadius: '0.25rem',
+                background: inputBg,
+                color: 'rgb(from var(--foreground) r g b)',
               }}
             />
 
@@ -200,25 +222,27 @@ function AppShell() {
                   top: 'calc(100% + 0.25rem)',
                   left: 0,
                   right: 0,
-                  border: '1px solid #e5e7eb',
-                  background: '#f9fafb',
+                  border: `1px solid ${borderColor}`,
+                  background: popoverBg,
                   padding: '0.5rem',
                   borderRadius: '0.5rem',
                   zIndex: 50,
+                  boxShadow: 'var(--shadow-md)',
                 }}
                 // prevent blur when clicking inside the dropdown
                 onMouseDown={(e) => e.preventDefault()}
               >
-                <div style={{ fontSize: '0.75rem', opacity: 0.85, marginBottom: '0.25rem' }}>Pages</div>
+                <div style={{ fontSize: '0.75rem', color: textMuted, marginBottom: '0.25rem' }}>Pages</div>
                 <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
                   <button
                     type="button"
                     onClick={() => onGoToPage('/plot')}
                     style={{
-                      border: '1px solid #e5e7eb',
+                      border: `1px solid ${borderColor}`,
                       background: 'transparent',
                       cursor: 'pointer',
                       padding: '0.25rem 0.5rem',
+                      borderRadius: 'var(--radius-sm)',
                     }}
                   >
                     Plot
@@ -227,17 +251,18 @@ function AppShell() {
                     type="button"
                     onClick={() => onGoToPage('/docs')}
                     style={{
-                      border: '1px solid #e5e7eb',
+                      border: `1px solid ${borderColor}`,
                       background: 'transparent',
                       cursor: 'pointer',
                       padding: '0.25rem 0.5rem',
+                      borderRadius: 'var(--radius-sm)',
                     }}
                   >
                     Docs
                   </button>
                 </div>
 
-                <div style={{ fontSize: '0.75rem', opacity: 0.85, marginBottom: '0.25rem' }}>Datasets</div>
+                <div style={{ fontSize: '0.75rem', color: textMuted, marginBottom: '0.25rem' }}>Datasets</div>
                 {datasetMatches.length ? (
                   <div style={{ display: 'grid', gap: '0.25rem' }}>
                     {datasetMatches.map((d) => (
@@ -247,50 +272,52 @@ function AppShell() {
                         onClick={() => onGoToDataset(d.id)}
                         style={{
                           textAlign: 'left',
-                          border: '1px solid #e5e7eb',
+                          border: `1px solid ${borderColor}`,
                           padding: '0.25rem 0.5rem',
                           background: 'transparent',
                           cursor: 'pointer',
+                          borderRadius: 'var(--radius-sm)',
                         }}
                       >
                         <div style={{ fontWeight: 700 }}>{d.name || d.id}</div>
-                        <div style={{ fontSize: '0.75rem', opacity: 0.85 }}>{d.id}</div>
+                        <div style={{ fontSize: '0.75rem', color: textMuted }}>{d.id}</div>
                       </button>
                     ))}
                   </div>
                 ) : (
-                  <div style={{ fontSize: '0.875rem', opacity: 0.85 }}>
+                  <div style={{ fontSize: '0.875rem', color: textMuted }}>
                     {globalSearchQuery ? 'No matching cached datasets.' : 'Type to search cached datasets.'}
                   </div>
                 )}
 
-                <div style={{ fontSize: '0.75rem', opacity: 0.85, marginTop: '0.5rem' }}>
+                <div style={{ fontSize: '0.75rem', color: textMuted, marginTop: '0.5rem' }}>
                   Uses cached dataset list (CAP-15); open Library to refresh.
                 </div>
 
                 {rawSearch ? (
                   <div style={{ marginTop: '0.75rem' }}>
-                    <div style={{ fontSize: '0.75rem', opacity: 0.85, marginBottom: '0.25rem' }}>Targets (CAP-15)</div>
+                    <div style={{ fontSize: '0.75rem', color: textMuted, marginBottom: '0.25rem' }}>Targets (CAP-15)</div>
                     <div style={{ display: 'grid', gap: '0.25rem' }}>
                       <button
                         type="button"
                         onClick={() => onStartMastSearch(rawSearch)}
                         style={{
                           textAlign: 'left',
-                          border: '1px solid #e5e7eb',
+                          border: `1px solid ${borderColor}`,
                           padding: '0.25rem 0.5rem',
                           background: 'transparent',
                           cursor: 'pointer',
+                          borderRadius: 'var(--radius-sm)',
                         }}
                       >
                         <div style={{ fontWeight: 700 }}>
                           {coords ? 'Search MAST using coordinates' : 'Search MAST for target'}
                         </div>
-                        <div style={{ fontSize: '0.75rem', opacity: 0.85 }}>{rawSearch}</div>
+                        <div style={{ fontSize: '0.75rem', color: textMuted }}>{rawSearch}</div>
                       </button>
 
                       {cachedTarget?.candidates?.length ? (
-                        <div style={{ fontSize: '0.75rem', opacity: 0.85, marginTop: '0.25rem' }}>
+                        <div style={{ fontSize: '0.75rem', color: textMuted, marginTop: '0.25rem' }}>
                           Cached target candidates: {cachedTarget.candidates.length}
                         </div>
                       ) : null}
@@ -313,11 +340,13 @@ function AppShell() {
         <aside
           aria-label="Library panel"
           style={{
-            borderRight: leftCollapsed ? 'none' : '1px solid #e5e7eb',
+            borderRight: leftCollapsed ? 'none' : `1px solid ${borderColor}`,
             overflow: 'auto',
             padding: leftCollapsed ? 0 : '0.75rem',
             minHeight: 0,
             display: leftCollapsed ? 'none' : 'block',
+            background: 'rgb(from var(--sidebar) r g b)',
+            color: 'rgb(from var(--sidebar-foreground) r g b)',
           }}
         >
           <LibraryPage />
@@ -330,11 +359,13 @@ function AppShell() {
         <aside
           aria-label="Notebook panel"
           style={{
-            borderLeft: rightCollapsed ? 'none' : '1px solid #e5e7eb',
+            borderLeft: rightCollapsed ? 'none' : `1px solid ${borderColor}`,
             overflow: 'auto',
             padding: rightCollapsed ? 0 : '0.75rem',
             minHeight: 0,
             display: rightCollapsed ? 'none' : 'block',
+            background: 'rgb(from var(--sidebar) r g b)',
+            color: 'rgb(from var(--sidebar-foreground) r g b)',
           }}
         >
           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.75rem' }}>
@@ -344,9 +375,10 @@ function AppShell() {
               style={{
                 fontWeight: rightTab === 'inspector' ? 700 : 400,
                 padding: '0.25rem 0.5rem',
-                border: '1px solid #e5e7eb',
+                border: `1px solid ${borderColor}`,
                 background: 'transparent',
                 cursor: 'pointer',
+                borderRadius: 'var(--radius-sm)',
               }}
             >
               Inspector
@@ -357,9 +389,10 @@ function AppShell() {
               style={{
                 fontWeight: rightTab === 'notebook' ? 700 : 400,
                 padding: '0.25rem 0.5rem',
-                border: '1px solid #e5e7eb',
+                border: `1px solid ${borderColor}`,
                 background: 'transparent',
                 cursor: 'pointer',
+                borderRadius: 'var(--radius-sm)',
               }}
             >
               Notebook
