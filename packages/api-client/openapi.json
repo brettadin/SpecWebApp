@@ -1105,6 +1105,80 @@
         "title": "ReferenceImportLineListCSVRequest",
         "type": "object"
       },
+      "ReferenceImportNistASDLineListRequest": {
+        "properties": {
+          "license": {
+            "$ref": "#/components/schemas/ReferenceLicense",
+            "default": {
+              "redistribution_allowed": "unknown"
+            }
+          },
+          "retrieved_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retrieved At"
+          },
+          "species": {
+            "title": "Species",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "wavelength_max_nm": {
+            "title": "Wavelength Max Nm",
+            "type": "number"
+          },
+          "wavelength_min_nm": {
+            "title": "Wavelength Min Nm",
+            "type": "number"
+          },
+          "x_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "nm",
+            "title": "X Unit"
+          },
+          "y_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Y Unit"
+          }
+        },
+        "required": [
+          "species",
+          "wavelength_min_nm",
+          "wavelength_max_nm"
+        ],
+        "title": "ReferenceImportNistASDLineListRequest",
+        "type": "object"
+      },
       "ReferenceLicense": {
         "properties": {
           "license_id": {
@@ -2810,6 +2884,44 @@
           }
         },
         "summary": "References Import Line List Csv"
+      }
+    },
+    "/references/import/nist-asd-line-list": {
+      "post": {
+        "operationId": "references_import_nist_asd_line_list_references_import_nist_asd_line_list_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReferenceImportNistASDLineListRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "References Import Nist Asd Line List"
       }
     },
     "/sessions": {

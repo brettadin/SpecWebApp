@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 
-import { onDatasetsChanged } from '../lib/appEvents'
+import { notifyDatasetsChanged, onDatasetsChanged } from '../lib/appEvents'
 import { saveCachedDatasets } from '../lib/datasetCache'
 import { saveMastHandoffPrefs } from '../lib/mastHandoff'
 import { logSessionEvent } from '../lib/sessionLogging'
@@ -161,12 +161,6 @@ export function LibraryPage() {
   const [refCitation, setRefCitation] = useState('')
   const [refRedistributionAllowed, setRefRedistributionAllowed] = useState<'unknown' | 'yes' | 'no'>('unknown')
 
-  const [lineUrl, setLineUrl] = useState('')
-  const [lineTitle, setLineTitle] = useState('')
-  const [lineSourceName, setLineSourceName] = useState('NIST ASD')
-  const [lineCitation, setLineCitation] = useState('')
-  const [lineXUnit, setLineXUnit] = useState('nm')
-  const [lineDelimiter, setLineDelimiter] = useState(',')
 
   const [mastBusy, setMastBusy] = useState(false)
   const [mastError, setMastError] = useState<string | null>(null)
@@ -304,6 +298,7 @@ export function LibraryPage() {
 
       const json = (await res.json()) as DatasetDetail
       await refreshDatasets()
+      notifyDatasetsChanged()
       void logSessionEvent({
         type: 'dataset.metadata_update',
         message: `Updated dataset metadata: ${json.name}`,
@@ -395,6 +390,7 @@ export function LibraryPage() {
       const json = (await res.json()) as IngestCommitResponse
       setCommitResult(json)
       await refreshDatasets()
+      notifyDatasetsChanged()
       void logSessionEvent({
         type: 'ingest.commit',
         message: `Imported ${json.dataset.name}`,
@@ -441,6 +437,7 @@ export function LibraryPage() {
         throw new Error(text || `HTTP ${res.status}`)
       }
       await refreshDatasets()
+      notifyDatasetsChanged()
       void logSessionEvent({
         type: 'reference.import',
         message: `Imported reference: ${refTitle.trim()}`,
@@ -456,59 +453,6 @@ export function LibraryPage() {
     }
   }
 
-  async function onImportLineList() {
-    setRefError(null)
-
-    const url = lineUrl.trim()
-    if (!url) return
-    if (!lineTitle.trim()) {
-      setRefError('Title is required for line list imports.')
-      return
-    }
-    if (!lineCitation.trim()) {
-      setRefError('Citation text is required (CAP-07 citation-first).')
-      return
-    }
-
-    setRefBusy(true)
-    try {
-      const res = await fetch('http://localhost:8000/references/import/line-list-csv', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: lineTitle.trim(),
-          source_name: lineSourceName.trim() || 'Unknown',
-          source_url: url,
-          citation_text: lineCitation.trim(),
-          trust_tier: 'Primary/Authoritative',
-          x_unit: lineXUnit.trim() || null,
-          delimiter: lineDelimiter,
-          has_header: true,
-          x_index: 0,
-          strength_index: 1,
-          license: { redistribution_allowed: refRedistributionAllowed },
-          query: { entered_url: url },
-        }),
-      })
-      if (!res.ok) {
-        const text = await res.text()
-        throw new Error(text || `HTTP ${res.status}`)
-      }
-      await refreshDatasets()
-      void logSessionEvent({
-        type: 'line_list.import',
-        message: `Imported line list: ${lineTitle.trim()}`,
-        payload: { source_url: url, source_name: lineSourceName.trim() || 'Unknown' },
-      })
-      setLineUrl('')
-      setLineTitle('')
-      setLineCitation('')
-    } catch (e) {
-      setRefError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setRefBusy(false)
-    }
-  }
 
   async function performMastSearch(opts: {
     target: string
@@ -928,6 +872,7 @@ export function LibraryPage() {
       const json = (await res.json()) as { id: string; name: string; created_at: string; source_file_name: string; sha256: string }
       setMastImported(json)
       await refreshDatasets()
+      notifyDatasetsChanged()
       void logSessionEvent({
         type: 'mast.import',
         message: `Imported from MAST: ${json.name}`,
@@ -1223,87 +1168,6 @@ export function LibraryPage() {
             </button>
           </div>
 
-          <div style={{ marginTop: '0.75rem', borderTop: '1px solid #e5e7eb', paddingTop: '0.75rem' }}>
-            <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Line list (CSV URL)</div>
-
-            <label>
-              <div style={{ marginBottom: '0.25rem' }}>CSV URL</div>
-              <input
-                aria-label="Line list URL"
-                value={lineUrl}
-                onChange={(e) => setLineUrl(e.target.value)}
-                placeholder="https://.../lines.csv"
-                style={{ width: '100%' }}
-                disabled={refBusy}
-              />
-            </label>
-
-            <label>
-              <div style={{ marginBottom: '0.25rem' }}>Title</div>
-              <input
-                aria-label="Line list title"
-                value={lineTitle}
-                onChange={(e) => setLineTitle(e.target.value)}
-                placeholder="e.g., NIST ASD Lines: Fe II"
-                style={{ width: '100%' }}
-                disabled={refBusy}
-              />
-            </label>
-
-            <label>
-              <div style={{ marginBottom: '0.25rem' }}>Source name</div>
-              <input
-                aria-label="Line list source name"
-                value={lineSourceName}
-                onChange={(e) => setLineSourceName(e.target.value)}
-                style={{ width: '100%' }}
-                disabled={refBusy}
-              />
-            </label>
-
-            <label>
-              <div style={{ marginBottom: '0.25rem' }}>Citation text</div>
-              <input
-                aria-label="Line list citation"
-                value={lineCitation}
-                onChange={(e) => setLineCitation(e.target.value)}
-                placeholder="Required (CAP-07): human-readable citation"
-                style={{ width: '100%' }}
-                disabled={refBusy}
-              />
-            </label>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
-              <label>
-                <div style={{ marginBottom: '0.25rem' }}>X unit</div>
-                <input
-                  aria-label="Line list x unit"
-                  value={lineXUnit}
-                  onChange={(e) => setLineXUnit(e.target.value)}
-                  style={{ width: '100%' }}
-                  disabled={refBusy}
-                />
-              </label>
-              <label>
-                <div style={{ marginBottom: '0.25rem' }}>Delimiter</div>
-                <select
-                  aria-label="Line list delimiter"
-                  value={lineDelimiter}
-                  onChange={(e) => setLineDelimiter(e.target.value)}
-                  disabled={refBusy}
-                >
-                  <option value=",">Comma</option>
-                  <option value="\t">Tab</option>
-                </select>
-              </label>
-            </div>
-
-            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
-              <button type="button" onClick={onImportLineList} disabled={refBusy}>
-                {refBusy ? 'Importing…' : 'Import line list'}
-              </button>
-            </div>
-          </div>
         </div>
       </div>
 

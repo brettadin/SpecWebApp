@@ -44,8 +44,10 @@ from .mast_client import MastHTTPError
 from .reference_import import (
     ReferenceImportJCAMPRequest,
     ReferenceImportLineListCSVRequest,
+    ReferenceImportNistASDLineListRequest,
     import_reference_jcamp_dx,
     import_reference_line_list_csv,
+    import_reference_nist_asd_line_list,
 )
 from .sessions import (
     SessionAddEventRequest,
@@ -437,6 +439,21 @@ def references_import_line_list_csv(req: ReferenceImportLineListCSVRequest) -> D
     # CAP-07 MVP: line-list import (CSV/tab) by URL with citation-first metadata.
     try:
         return import_reference_line_list_csv(req)
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+    except TimeoutError as err:
+        raise HTTPException(status_code=504, detail=str(err)) from err
+    except Exception as err:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=str(err)) from err
+
+
+@app.post("/references/import/nist-asd-line-list", response_model=DatasetDetail)
+def references_import_nist_asd_line_list(
+    req: ReferenceImportNistASDLineListRequest,
+) -> DatasetDetail:
+    # CAP-07: NIST ASD Lines import by query (no user-provided URL).
+    try:
+        return import_reference_nist_asd_line_list(req)
     except ValueError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
     except TimeoutError as err:

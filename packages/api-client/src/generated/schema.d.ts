@@ -261,6 +261,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/references/import/nist-asd-line-list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** References Import Nist Asd Line List */
+        post: operations["references_import_nist_asd_line_list_references_import_nist_asd_line_list_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/sessions": {
         parameters: {
             query?: never;
@@ -827,6 +844,32 @@ export interface components {
             x_index: number;
             /** X Unit */
             x_unit?: string | null;
+            /** Y Unit */
+            y_unit?: string | null;
+        };
+        /** ReferenceImportNistASDLineListRequest */
+        ReferenceImportNistASDLineListRequest: {
+            /**
+             * @default {
+             *       "redistribution_allowed": "unknown"
+             *     }
+             */
+            license: components["schemas"]["ReferenceLicense"];
+            /** Retrieved At */
+            retrieved_at?: string | null;
+            /** Species */
+            species: string;
+            /** Title */
+            title?: string | null;
+            /** Wavelength Max Nm */
+            wavelength_max_nm: number;
+            /** Wavelength Min Nm */
+            wavelength_min_nm: number;
+            /**
+             * X Unit
+             * @default nm
+             */
+            x_unit: string | null;
             /** Y Unit */
             y_unit?: string | null;
         };
@@ -1717,6 +1760,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ReferenceImportLineListCSVRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatasetDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    references_import_nist_asd_line_list_references_import_nist_asd_line_list_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReferenceImportNistASDLineListRequest"];
             };
         };
         responses: {

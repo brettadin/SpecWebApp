@@ -3,6 +3,8 @@ from __future__ import annotations
 import csv
 import io
 import os
+import re
+import urllib.parse
 import urllib.request
 from datetime import UTC, datetime
 from typing import Literal
@@ -78,6 +80,23 @@ class ReferenceImportLineListCSVRequest(BaseModel):
     has_header: bool = True
     x_index: int = 0
     strength_index: int | None = 1
+
+
+class ReferenceImportNistASDLineListRequest(BaseModel):
+    species: str
+    wavelength_min_nm: float
+    wavelength_max_nm: float
+
+    # Optional UX sugar; we auto-fill citation/source metadata.
+    title: str | None = None
+
+    # Optional overrides (rarely needed, but kept for consistency with other importers)
+    x_unit: str | None = "nm"
+    y_unit: str | None = None
+
+    # Optional provenance overrides
+    retrieved_at: str | None = None
+    license: ReferenceLicense = ReferenceLicense()
 
 
 def _guess_filename_from_url(url: str) -> str:
@@ -194,6 +213,24 @@ def _parse_line_list_csv(
     x_index: int,
     strength_index: int | None,
 ) -> tuple[list[float], list[float]]:
+    float_token = re.compile(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?")
+
+    def coerce_float(cell: object) -> float | None:
+        raw = str(cell).strip()
+        if not raw:
+            return None
+        if (raw.startswith('"') and raw.endswith('"')) or (
+            raw.startswith("'") and raw.endswith("'")
+        ):
+            raw = raw[1:-1].strip()
+        m = float_token.search(raw)
+        if not m:
+            return None
+        try:
+            return float(m.group(0))
+        except ValueError:
+            return None
+
     if delimiter == "\\t":
         delimiter = "\t"
 
@@ -210,17 +247,15 @@ def _parse_line_list_csv(
             continue
         if x_index >= len(row):
             continue
-        try:
-            xv = float(str(row[x_index]).strip())
-        except ValueError:
+        xv = coerce_float(row[x_index])
+        if xv is None:
             continue
 
         if strength_index is None or strength_index >= len(row):
             yv = 1.0
         else:
-            try:
-                yv = float(str(row[strength_index]).strip())
-            except ValueError:
+            yv = coerce_float(row[strength_index])
+            if yv is None:
                 yv = 1.0
 
         xs.append(xv)
@@ -302,6 +337,155 @@ def import_reference_line_list_csv(req: ReferenceImportLineListCSVRequest) -> Da
     return save_dataset(
         name=req.title.strip(),
         source_file_name=_guess_filename_from_url(str(req.source_url)),
+        raw=raw,
+        parsed=parsed,
+    )
+
+
+def _parse_nist_asd_tab_delimited(text: str) -> tuple[list[float], list[float]]:
+    # NIST ASD tab-delimited output typically includes header names like:
+    #   obs_wl_vac(nm), intens
+    # but can include many optional columns depending on query.
+    rows = list(csv.reader(io.StringIO(text), delimiter="\t"))
+    if not rows:
+        return [], []
+
+    header = rows[0]
+    header_norm = [str(h).strip().lower() for h in header]
+
+    def find_index(pred) -> int | None:
+        for i, h in enumerate(header_norm):
+            if pred(h):
+                return i
+        return None
+
+    x_index = find_index(lambda h: "obs_wl" in h and "nm" in h)
+    if x_index is None:
+        x_index = find_index(lambda h: "obs" in h and "wl" in h)
+    if x_index is None:
+        x_index = 0
+
+    strength_index = find_index(lambda h: "intens" in h)
+    # If intensity is not present, fall back to unit sticks (y=1.0).
+
+    return _parse_line_list_csv(
+        text=text,
+        delimiter="\t",
+        has_header=True,
+        x_index=x_index,
+        strength_index=strength_index,
+    )
+
+
+def import_reference_nist_asd_line_list(
+    req: ReferenceImportNistASDLineListRequest,
+) -> DatasetDetail:
+    species = req.species.strip()
+    if not species:
+        raise ValueError("species is required (e.g., 'Fe II')")
+    if not (req.wavelength_min_nm < req.wavelength_max_nm):
+        raise ValueError("wavelength_min_nm must be < wavelength_max_nm")
+
+    retrieved_at = req.retrieved_at or datetime.now(tz=UTC).isoformat()
+
+    # Build the NIST ASD Lines query URL (no user-provided URL).
+    # Source for parameter names: https://physics.nist.gov/PhysRefData/ASD/lines_form.html
+    base_url = os.environ.get(
+        "NIST_ASD_LINES_URL", "https://physics.nist.gov/cgi-bin/ASD/lines1.pl"
+    )
+
+    params = {
+        "spectra": species,
+        "output_type": "0",  # Wavelength
+        "low_w": f"{req.wavelength_min_nm}",
+        "upp_w": f"{req.wavelength_max_nm}",
+        "unit": "1",  # nm
+        "format": "3",  # Tab-delimited
+        "output": "0",  # Entirety
+        "page_size": "5000",
+        "show_av": "3",  # Vacuum (all wavelengths)
+        "show_obs_wl": "1",
+        "intens_out": "1",
+        # NIST requires selecting at least one transition type
+        "allowed_out": "1",
+        "forbid_out": "1",
+    }
+
+    url = f"{base_url}?{urllib.parse.urlencode(params, quote_via=urllib.parse.quote_plus)}"
+
+    with urllib.request.urlopen(url, timeout=20) as resp:
+        raw = resp.read(20 * 1024 * 1024)
+
+    if not raw:
+        raise ValueError("Empty payload fetched from NIST ASD")
+
+    sha = sha256_bytes(raw)
+    text = _decode_text_best_effort(raw)
+
+    # NIST returns HTML with an embedded error message if params are invalid.
+    if "Error Message" in text or "<html" in text.lower():
+        raise ValueError("NIST ASD returned an error page; please verify the species and range.")
+
+    x, y = _parse_nist_asd_tab_delimited(text)
+    if not x:
+        raise ValueError("No numeric lines parsed from NIST ASD output.")
+
+    title = (req.title or f"NIST ASD Lines: {species}").strip()
+    citation_text = (
+        f"NIST Atomic Spectra Database (ASD), Lines query for {species} "
+        f"({req.wavelength_min_nm}–{req.wavelength_max_nm} nm), retrieved {retrieved_at}."
+    )
+
+    warnings: list[str] = []
+
+    x_unit = (req.x_unit or "nm").strip() or None
+    y_unit = (req.y_unit or "").strip() or None
+    if not x_unit:
+        warnings.append("X unit is missing; please confirm units for trustworthy comparisons.")
+
+    parsed = ParsedDataset(
+        name=title,
+        created_at=retrieved_at,
+        source_file_name="nist-asd:lines1.pl",
+        sha256=sha,
+        parser="reference-nist-asd-line-list",
+        parser_decisions={
+            "species": species,
+            "wavelength_min_nm": req.wavelength_min_nm,
+            "wavelength_max_nm": req.wavelength_max_nm,
+            "format": "tab-delimited",
+            "x_col": "obs_wl*",
+            "strength_col": "intens*",
+        },
+        x_unit=x_unit,
+        y_unit=y_unit,
+        x=x,
+        y=y,
+        x_count=len(x),
+        warnings=warnings,
+    ).model_dump()
+
+    parsed["reference"] = {
+        "source_type": "LineListDB",
+        "data_type": "LineList",
+        "trust_tier": "Primary/Authoritative",
+        "source_name": "NIST ASD",
+        "source_url": url,
+        "retrieved_at": retrieved_at,
+        "citation_text": citation_text,
+        "query": {
+            "species": species,
+            "wavelength_min_nm": req.wavelength_min_nm,
+            "wavelength_max_nm": req.wavelength_max_nm,
+        },
+        "license": req.license.model_dump(),
+        "sharing_policy": _sharing_policy(req.license.redistribution_allowed),
+        "raw_sha256": sha,
+    }
+
+    return save_dataset(
+        name=title,
+        source_file_name="nist-asd:lines1.pl",
         raw=raw,
         parsed=parsed,
     )

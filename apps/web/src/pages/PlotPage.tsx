@@ -22,7 +22,7 @@ import {
 } from '../lib/transforms'
 
 import { detectFeatures, type DetectedFeature, type FeatureMode } from '../lib/featureDetection'
-import { notifyDatasetsChanged } from '../lib/appEvents'
+import { notifyDatasetsChanged, onDatasetsChanged } from '../lib/appEvents'
 import { logSessionEvent, postSessionEvent } from '../lib/sessionLogging'
 import { buildPlotSnapshotV1, coercePlotSnapshotV1, type PlotSnapshotV1 } from '../lib/plotSnapshot'
 import { usePanelSlots } from '../layout/panelSlotsContext'
@@ -302,6 +302,10 @@ export function PlotPage() {
   const [exportBusy, setExportBusy] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
   const [plotlyRelayout, setPlotlyRelayout] = useState<Record<string, unknown> | null>(null)
+
+  const [nistSpecies, setNistSpecies] = useState('')
+  const [nistBusy, setNistBusy] = useState(false)
+  const [nistError, setNistError] = useState<string | null>(null)
 
   const restoreParams = useMemo(() => {
     const p = new URLSearchParams(location.search)
@@ -640,6 +644,121 @@ export function PlotPage() {
     return visibleDatasetIds.map((id) => ({ id, series: seriesById[id], meta: datasetsById.get(id) }))
   }, [visibleDatasetIds, seriesById, datasetsById])
 
+  const nistDefaultRangeNm = useMemo(() => {
+    // Prefer a visible non-line-list trace as the range anchor.
+    const candidates = activeSeries
+      .map((t) => ({ t, meta: datasetsById.get(t.id), series: t.series }))
+      .filter((r) => r.series && r.series.x && Array.isArray(r.series.x))
+
+    const nonLineList = candidates.find((r) => r.meta?.reference?.data_type !== 'LineList') ?? candidates[0]
+    const s = nonLineList?.series
+    if (!s) return { ok: false as const, loNm: 0, hiNm: 1000, note: 'No loaded traces; using 0–1000 nm.' }
+
+    const xs = (Array.isArray(s.x) ? (s.x as number[]) : []).map((v) => Number(v)).filter((v) => Number.isFinite(v))
+    if (!xs.length) return { ok: false as const, loNm: 0, hiNm: 1000, note: 'No numeric x-values; using 0–1000 nm.' }
+
+    let lo = xs[0]
+    let hi = xs[0]
+    for (let i = 1; i < xs.length; i += 1) {
+      const v = xs[i]
+      if (v < lo) lo = v
+      if (v > hi) hi = v
+    }
+    if (!Number.isFinite(lo) || !Number.isFinite(hi) || lo === hi) {
+      return { ok: false as const, loNm: 0, hiNm: 1000, note: 'Unable to infer x-range; using 0–1000 nm.' }
+    }
+
+    try {
+      const loNm = convertXScalarFromCanonical(lo, s.x_unit, 'nm')
+      const hiNm = convertXScalarFromCanonical(hi, s.x_unit, 'nm')
+      const loNmSorted = Math.min(loNm, hiNm)
+      const hiNmSorted = Math.max(loNm, hiNm)
+      return { ok: true as const, loNm: loNmSorted, hiNm: hiNmSorted, note: null }
+    } catch {
+      // If units are unknown, assume the trace is already in nm (best-effort).
+      const loNmSorted = Math.min(lo, hi)
+      const hiNmSorted = Math.max(lo, hi)
+      return {
+        ok: false as const,
+        loNm: loNmSorted,
+        hiNm: hiNmSorted,
+        note: 'X unit is unknown; assuming values are nm.',
+      }
+    }
+  }, [activeSeries, datasetsById])
+
+  const reloadDatasets = useCallback(async () => {
+    const res = await fetch(`${API_BASE}/datasets`)
+    if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`)
+    const json = (await res.json()) as DatasetSummary[]
+    setDatasets(json)
+    setTraceStates((prev) => {
+      const existing = new Map(prev.map((t) => [t.datasetId, t]))
+      return json.map((d) => existing.get(d.id) ?? { datasetId: d.id, visible: false })
+    })
+  }, [])
+
+  useEffect(() => {
+    // Keep Plot's dataset list in sync with Library imports/edits.
+    const off = onDatasetsChanged(() => {
+      void reloadDatasets()
+    })
+    return off
+  }, [reloadDatasets])
+
+  const onFetchNistAsdLines = useCallback(async () => {
+    setNistError(null)
+    const species = nistSpecies.trim()
+    if (!species) {
+      setNistError("Type a species like 'Fe II' (or 'Na I').")
+      return
+    }
+
+    setNistBusy(true)
+    try {
+      const loNm = nistDefaultRangeNm.loNm
+      const hiNm = nistDefaultRangeNm.hiNm
+      if (!Number.isFinite(loNm) || !Number.isFinite(hiNm) || loNm >= hiNm) {
+        throw new Error('Could not determine a valid wavelength range for the query.')
+      }
+
+      const res = await fetch(`${API_BASE}/references/import/nist-asd-line-list`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          species,
+          wavelength_min_nm: loNm,
+          wavelength_max_nm: hiNm,
+        }),
+      })
+
+      if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`)
+      const created = (await res.json()) as { id: string }
+      const newId = String(created.id)
+
+      await reloadDatasets()
+
+      setTraceStates((prev) => {
+        const byId = new Map(prev.map((t) => [t.datasetId, t]))
+        byId.set(newId, { datasetId: newId, visible: true })
+        return Array.from(byId.values())
+      })
+
+      await ensureSeriesLoaded(newId)
+      notifyDatasetsChanged()
+
+      void logSessionEvent({
+        type: 'reference.nist_asd.fetch',
+        message: `Fetched NIST ASD line list for ${species}`,
+        payload: { species, wavelength_min_nm: loNm, wavelength_max_nm: hiNm, dataset_id: newId },
+      })
+    } catch (e) {
+      setNistError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setNistBusy(false)
+    }
+  }, [ensureSeriesLoaded, nistDefaultRangeNm.hiNm, nistDefaultRangeNm.loNm, nistSpecies, reloadDatasets])
+
   const unitHints = useMemo(() => {
     // Prefer first loaded trace's units for axis labels.
     const first = activeSeries.find((t) => t.series)
@@ -969,11 +1088,18 @@ export function PlotPage() {
       }
 
       const next: DerivedTrace[] = []
+      const skippedLineLists: string[] = []
+      let appliedCount = 0
 
       for (const datasetId of selectedTransformDatasetIds) {
         const s = await ensureSeriesLoaded(datasetId)
         const meta = datasetsById.get(datasetId)
         const baseName = meta?.name ?? datasetId
+
+        if (meta?.reference?.data_type === 'LineList') {
+          skippedLineLists.push(baseName)
+          continue
+        }
 
         let x = s.x
         let y = s.y
@@ -1074,15 +1200,29 @@ export function PlotPage() {
           provenance,
           trust: { interpolated: false },
         })
+
+        appliedCount += 1
+      }
+
+      if (!next.length) {
+        if (skippedLineLists.length) {
+          throw new Error(
+            `Transforms are disabled for line lists (overlays). Uncheck line lists and try again. Skipped: ${skippedLineLists.join(
+              ', ',
+            )}`,
+          )
+        }
+        throw new Error('No traces were transformed.')
       }
 
       setDerivedTraces((prev) => [...prev, ...next])
 
       void logSessionEvent({
         type: 'transforms.apply',
-        message: `Applied transforms to ${selectedTransformDatasetIds.length} dataset(s)`,
+        message: `Applied transforms to ${appliedCount} dataset(s)`,
         payload: {
           dataset_ids: selectedTransformDatasetIds,
+          skipped_line_lists: skippedLineLists,
           baseline: baselineMode === 'poly' ? { mode: 'poly', order: Number(baselineOrder) } : { mode: baselineMode },
           normalize: {
             mode: normMode,
@@ -2104,6 +2244,46 @@ export function PlotPage() {
         ) : (
           <p style={{ marginTop: '0.25rem' }}>No datasets found. Import one in Library first.</p>
         )}
+      </div>
+
+      <div style={{ marginTop: '0.75rem', borderTop: '1px solid #e5e7eb', paddingTop: '0.75rem' }}>
+        <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>NIST ASD Lines (CAP-07)</div>
+        <div style={{ fontSize: '0.9rem', opacity: 0.9 }}>
+          Type what you’re searching for (e.g., <strong>Fe II</strong>) and fetch spectral lines directly as bar/stick overlays.
+        </div>
+
+        {nistError ? (
+          <div style={{ border: '1px solid #e5e7eb', padding: '0.5rem', marginTop: '0.5rem' }}>
+            <p style={{ color: 'crimson', margin: 0 }}>{nistError}</p>
+          </div>
+        ) : null}
+
+        <div style={{ display: 'grid', gap: '0.5rem', marginTop: '0.5rem' }}>
+          <div>
+            <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Species</label>
+            <input
+              aria-label="NIST ASD species"
+              placeholder="e.g., Fe II"
+              value={nistSpecies}
+              onChange={(e) => setNistSpecies(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  void onFetchNistAsdLines()
+                }
+              }}
+              style={{ width: '100%' }}
+            />
+            <div style={{ fontSize: '0.85rem', opacity: 0.85, marginTop: '0.25rem' }}>
+              Range: {nistDefaultRangeNm.loNm.toFixed(3)}–{nistDefaultRangeNm.hiNm.toFixed(3)} nm
+              {nistDefaultRangeNm.note ? ` (${nistDefaultRangeNm.note})` : ''}
+            </div>
+          </div>
+
+          <button type="button" onClick={onFetchNistAsdLines} disabled={nistBusy} style={{ cursor: 'pointer' }}>
+            {nistBusy ? 'Fetching…' : 'Fetch & overlay'}
+          </button>
+        </div>
       </div>
 
       <div style={{ marginTop: '0.75rem', borderTop: '1px solid #e5e7eb', paddingTop: '0.75rem' }}>
