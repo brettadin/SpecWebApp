@@ -275,14 +275,88 @@ def build_ingest_preview(
     hdu_index: int | None = None,
 ) -> IngestPreviewResponse:
     # Format detection: extension + lightweight sniffing
+    file_lower = file_name.lower()
     head = raw[:4096]
     upper_head = head.upper()
 
-    if head.startswith(b"SIMPLE  ") or head.startswith(b"XTENSION"):
+    def looks_like_fits_filename(name_lower: str) -> bool:
+        return name_lower.endswith(
+            (
+                ".fits",
+                ".fit",
+                ".fts",
+                ".fits.gz",
+                ".fit.gz",
+                ".fts.gz",
+            )
+        )
+
+    fits_payload = raw
+    if (
+        file_lower.endswith(".gz")
+        and looks_like_fits_filename(file_lower)
+        and head[:2] == b"\x1f\x8b"
+    ):
+        import gzip
+
+        try:
+            fits_payload = gzip.decompress(raw)
+        except Exception as err:
+            return IngestPreviewResponse(
+                file_name=file_name,
+                file_size_bytes=len(raw),
+                encoding="binary",
+                parser="fits",
+                delimiter="",
+                has_header=True,
+                hdu_index=None,
+                fits_hdu_candidates=[],
+                x_unit_hint=None,
+                y_unit_hint=None,
+                columns=[],
+                preview_rows=[],
+                suggested_x_index=None,
+                suggested_y_index=None,
+                warnings=[
+                    "File looks like gzip-compressed FITS, but preview decompression failed.",
+                    f"gzip error: {err}",
+                ],
+                source_preamble=None,
+                source_metadata=None,
+            )
+
+    fits_head = fits_payload[:4096]
+
+    if (
+        fits_head.startswith(b"SIMPLE  ")
+        or fits_head.startswith(b"XTENSION")
+        or looks_like_fits_filename(file_lower)
+    ):
         from .fits_parser import list_table_candidates, suggest_xy_columns
 
         warnings: list[str] = []
-        candidates = list_table_candidates(raw)
+        try:
+            candidates = list_table_candidates(fits_payload)
+        except Exception as err:
+            return IngestPreviewResponse(
+                file_name=file_name,
+                file_size_bytes=len(raw),
+                encoding="binary",
+                parser="fits",
+                delimiter="",
+                has_header=True,
+                hdu_index=None,
+                fits_hdu_candidates=[],
+                x_unit_hint=None,
+                y_unit_hint=None,
+                columns=[],
+                preview_rows=[],
+                suggested_x_index=None,
+                suggested_y_index=None,
+                warnings=[f"Failed to parse FITS preview: {err}"],
+                source_preamble=None,
+                source_metadata=None,
+            )
         if not candidates:
             return IngestPreviewResponse(
                 file_name=file_name,
@@ -332,7 +406,7 @@ def build_ingest_preview(
                 "Multiple FITS table HDUs detected; please confirm which HDU contains the spectrum."
             )
 
-        x_idx, y_idx = suggest_xy_columns(raw, chosen.hdu_index)
+        x_idx, y_idx = suggest_xy_columns(fits_payload, chosen.hdu_index)
         if x_idx is None or y_idx is None:
             warnings.append(
                 "Could not confidently infer X/Y columns from FITS; please select manually."

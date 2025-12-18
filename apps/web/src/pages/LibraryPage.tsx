@@ -390,7 +390,12 @@ export function LibraryPage() {
       const json = (await res.json()) as IngestCommitResponse
       setCommitResult(json)
       await refreshDatasets()
-      notifyDatasetsChanged()
+      try {
+        sessionStorage.setItem('spectra:autoShowDatasetId', json.dataset.id)
+      } catch {
+        // ignore
+      }
+      notifyDatasetsChanged({ datasetId: json.dataset.id, reason: 'ingest.commit' })
       void logSessionEvent({
         type: 'ingest.commit',
         message: `Imported ${json.dataset.name}`,
@@ -437,7 +442,7 @@ export function LibraryPage() {
         throw new Error(text || `HTTP ${res.status}`)
       }
       await refreshDatasets()
-      notifyDatasetsChanged()
+      notifyDatasetsChanged({ reason: 'reference.import' })
       void logSessionEvent({
         type: 'reference.import',
         message: `Imported reference: ${refTitle.trim()}`,
@@ -872,7 +877,12 @@ export function LibraryPage() {
       const json = (await res.json()) as { id: string; name: string; created_at: string; source_file_name: string; sha256: string }
       setMastImported(json)
       await refreshDatasets()
-      notifyDatasetsChanged()
+      try {
+        sessionStorage.setItem('spectra:autoShowDatasetId', json.id)
+      } catch {
+        // ignore
+      }
+      notifyDatasetsChanged({ datasetId: json.id, reason: 'mast.import' })
       void logSessionEvent({
         type: 'mast.import',
         message: `Imported from MAST: ${json.name}`,

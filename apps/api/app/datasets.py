@@ -177,6 +177,8 @@ def list_datasets() -> list[DatasetSummary]:
             )
         )
 
+    # Newest-first for usability. ISO timestamps sort lexicographically.
+    out.sort(key=lambda d: (d.created_at or ""), reverse=True)
     return out
 
 

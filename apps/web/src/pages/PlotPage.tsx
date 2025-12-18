@@ -1,4 +1,4 @@
-import { Component, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Component, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import PlotlyModule, { type PlotParams } from 'react-plotly.js'
 
@@ -22,7 +22,7 @@ import {
 } from '../lib/transforms'
 
 import { detectFeatures, type DetectedFeature, type FeatureMode } from '../lib/featureDetection'
-import { notifyDatasetsChanged, onDatasetsChanged } from '../lib/appEvents'
+import { notifyDatasetsChanged, onDatasetsChanged, type DatasetsChangedDetail } from '../lib/appEvents'
 import { logSessionEvent, postSessionEvent } from '../lib/sessionLogging'
 import { buildPlotSnapshotV1, coercePlotSnapshotV1, type PlotSnapshotV1 } from '../lib/plotSnapshot'
 import { usePanelSlots } from '../layout/panelSlotsContext'
@@ -56,6 +56,8 @@ type DatasetSeries = {
   y: number[]
   x_unit: string | null
   y_unit: string | null
+  parser?: string | null
+  parser_decisions?: Record<string, unknown> | null
   reference?: {
     source_type?: string
     data_type?: string
@@ -202,6 +204,7 @@ export function PlotPage() {
   const [datasets, setDatasets] = useState<DatasetSummary[]>([])
   const [traceStates, setTraceStates] = useState<TraceState[]>([])
   const [seriesById, setSeriesById] = useState<Record<string, DatasetSeries>>({})
+  const seriesByIdRef = useRef<Record<string, DatasetSeries>>({})
   const [derivedTraces, setDerivedTraces] = useState<DerivedTrace[]>([])
   const [annotationsByDatasetId, setAnnotationsByDatasetId] = useState<Record<string, Annotation[]>>({})
   const [filter, setFilter] = useState('')
@@ -382,16 +385,21 @@ export function PlotPage() {
     if (error) setWarning(null)
   }, [error])
 
-  async function ensureSeriesLoaded(datasetId: string): Promise<DatasetSeries> {
-    const cached = seriesById[datasetId]
+  useEffect(() => {
+    seriesByIdRef.current = seriesById
+  }, [seriesById])
+
+  const ensureSeriesLoaded = useCallback(async (datasetId: string): Promise<DatasetSeries> => {
+    const cached = seriesByIdRef.current[datasetId]
     if (cached) return cached
 
     const res = await fetch(`${API_BASE}/datasets/${encodeURIComponent(datasetId)}/data`)
     if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`)
     const json = (await res.json()) as DatasetSeries
+    seriesByIdRef.current = { ...seriesByIdRef.current, [datasetId]: json }
     setSeriesById((prev) => ({ ...prev, [datasetId]: json }))
     return json
-  }
+  }, [])
 
   const ensureAnnotationsLoaded = useCallback(
     async (datasetId: string) => {
@@ -553,15 +561,7 @@ export function PlotPage() {
         setDiffRatioHandling(snap.state.diffRatioHandling)
         setDiffTau(snap.state.diffTau)
 
-        async function loadSeriesOnce(datasetId: string) {
-          if (seriesById[datasetId]) return
-          const resp = await fetch(`${API_BASE}/datasets/${encodeURIComponent(datasetId)}/data`)
-          if (!resp.ok) throw new Error((await resp.text()) || `HTTP ${resp.status}`)
-          const s = (await resp.json()) as DatasetSeries
-          setSeriesById((prev) => ({ ...prev, [datasetId]: s }))
-        }
-
-        await Promise.all(Array.from(nextVisible).map((id) => loadSeriesOnce(id)))
+        await Promise.all(Array.from(nextVisible).map((id) => ensureSeriesLoaded(id)))
         if (snap.state.showAnnotations) {
           await Promise.all(Array.from(nextVisible).map((id) => ensureAnnotationsLoaded(id)))
         }
@@ -580,29 +580,32 @@ export function PlotPage() {
     return () => {
       cancelled = true
     }
-  }, [ensureAnnotationsLoaded, restoreParams, seriesById])
+  }, [ensureAnnotationsLoaded, ensureSeriesLoaded, restoreParams])
 
-  async function onToggleDataset(datasetId: string, nextVisible: boolean) {
-    setError(null)
-    setWarning(null)
-    setTraceStates((prev) =>
-      prev.map((t) => (t.datasetId === datasetId ? { ...t, visible: nextVisible } : t)),
-    )
-    if (nextVisible) {
-      try {
-        await ensureSeriesLoaded(datasetId)
-        if (showAnnotations) {
-          await ensureAnnotationsLoaded(datasetId)
+  const onToggleDataset = useCallback(
+    async (datasetId: string, nextVisible: boolean) => {
+      setError(null)
+      setWarning(null)
+      setTraceStates((prev) =>
+        prev.map((t) => (t.datasetId === datasetId ? { ...t, visible: nextVisible } : t)),
+      )
+      if (nextVisible) {
+        try {
+          await ensureSeriesLoaded(datasetId)
+          if (showAnnotations) {
+            await ensureAnnotationsLoaded(datasetId)
+          }
+        } catch (e) {
+          setError(e instanceof Error ? e.message : String(e))
+          // Revert toggle if fetch fails.
+          setTraceStates((prev) =>
+            prev.map((t) => (t.datasetId === datasetId ? { ...t, visible: false } : t)),
+          )
         }
-      } catch (e) {
-        setError(e instanceof Error ? e.message : String(e))
-        // Revert toggle if fetch fails.
-        setTraceStates((prev) =>
-          prev.map((t) => (t.datasetId === datasetId ? { ...t, visible: false } : t)),
-        )
       }
-    }
-  }
+    },
+    [ensureAnnotationsLoaded, ensureSeriesLoaded, showAnnotations],
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -698,13 +701,46 @@ export function PlotPage() {
     })
   }, [])
 
+  const autoShowDataset = useCallback(
+    async (datasetId: string) => {
+      const id = datasetId.trim()
+      if (!id) return
+      try {
+        await reloadDatasets()
+        await onToggleDataset(id, true)
+      } catch {
+        // best-effort
+      }
+    },
+    [onToggleDataset, reloadDatasets],
+  )
+
   useEffect(() => {
     // Keep Plot's dataset list in sync with Library imports/edits.
-    const off = onDatasetsChanged(() => {
-      void reloadDatasets()
+    const off = onDatasetsChanged((detail?: DatasetsChangedDetail) => {
+      const datasetId = (detail?.datasetId ?? '').trim()
+      if (datasetId) {
+        void autoShowDataset(datasetId)
+      } else {
+        void reloadDatasets()
+      }
     })
     return off
-  }, [reloadDatasets])
+  }, [autoShowDataset, reloadDatasets])
+
+  useEffect(() => {
+    // If the user imported in Library and then navigated to Plot, auto-show that dataset.
+    let id = ''
+    try {
+      id = (sessionStorage.getItem('spectra:autoShowDatasetId') ?? '').trim()
+      if (id) sessionStorage.removeItem('spectra:autoShowDatasetId')
+    } catch {
+      id = ''
+    }
+    if (id) {
+      void autoShowDataset(id)
+    }
+  }, [autoShowDataset])
 
   const onFetchNistAsdLines = useCallback(async () => {
     setNistError(null)
@@ -766,6 +802,14 @@ export function PlotPage() {
       x: first?.series?.x_unit ?? null,
       y: first?.series?.y_unit ?? null,
     }
+  }, [activeSeries])
+
+  const axisNameHints = useMemo(() => {
+    const first = activeSeries.find((t) => t.series)?.series
+    const decisions = (first?.parser_decisions ?? {}) as Record<string, unknown>
+    const xCol = typeof decisions.x_col === 'string' ? decisions.x_col : null
+    const yCol = typeof decisions.y_col === 'string' ? decisions.y_col : null
+    return { xCol, yCol }
   }, [activeSeries])
 
   const xUnitIsKnown = useMemo(() => normalizeXUnit(unitHints.x) != null, [unitHints.x])
@@ -982,16 +1026,21 @@ export function PlotPage() {
       }
     }
 
+    const xName = axisNameHints.xCol ? String(axisNameHints.xCol) : 'X'
+    const yName = axisNameHints.yCol ? String(axisNameHints.yCol) : 'Y'
+    const xTitle = unitHints.x ? `${xName} (${xUnitLabel})` : xName
+    const yTitle = unitHints.y ? `${yName} (${formatUnit(unitHints.y)})` : yName
+
     return {
       autosize: true,
       height: 520,
       margin: { l: 50, r: 20, t: 20, b: 50 },
-      xaxis: { title: `X (${xUnitLabel})` },
-      yaxis: { title: `Y (${formatUnit(unitHints.y)})` },
+      xaxis: { title: xTitle },
+      yaxis: { title: yTitle },
       legend: { orientation: 'h' },
       shapes,
     }
-  }, [activeSeries, annotationsByDatasetId, displayXUnit, showAnnotations, unitHints.x, unitHints.y, xUnitLabel])
+  }, [activeSeries, annotationsByDatasetId, axisNameHints.xCol, axisNameHints.yCol, displayXUnit, showAnnotations, unitHints.x, unitHints.y, xUnitLabel])
 
   const visibleAnnotations = useMemo(() => {
     if (!showAnnotations) return []

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gzip
 import io
 
 import numpy as np
@@ -100,6 +101,38 @@ def test_ingest_preview_fits_detects_table_columns() -> None:
     res = client.post(
         "/ingest/preview",
         files={"file": ("test.fits", fits_bytes, "application/fits")},
+    )
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["parser"] == "fits"
+    assert body["hdu_index"] is not None
+    assert body["suggested_x_index"] == 0
+    assert body["suggested_y_index"] == 1
+    assert [c["name"] for c in body["columns"]] == ["wavelength", "flux"]
+
+
+def test_ingest_preview_fits_gz_detects_table_columns() -> None:
+    client = TestClient(app)
+
+    wave = np.array([1.0, 2.0, 3.0], dtype=np.float32)
+    flux = np.array([10.0, 20.0, 30.0], dtype=np.float32)
+    hdu = fits.BinTableHDU.from_columns(
+        [
+            fits.Column(name="wavelength", array=wave, format="E"),
+            fits.Column(name="flux", array=flux, format="E"),
+        ],
+        name="SPECTRUM",
+    )
+    hdul = fits.HDUList([fits.PrimaryHDU(), hdu])
+    buf = io.BytesIO()
+    hdul.writeto(buf)
+    fits_bytes = buf.getvalue()
+
+    gz_bytes = gzip.compress(fits_bytes)
+    res = client.post(
+        "/ingest/preview",
+        files={"file": ("test.fits.gz", gz_bytes, "application/gzip")},
     )
 
     assert res.status_code == 200

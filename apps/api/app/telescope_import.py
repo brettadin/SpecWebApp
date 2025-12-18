@@ -187,8 +187,8 @@ def _import_fits_payload(
     def monotonic_direction(values: list[float]) -> str | None:
         if len(values) < 3:
             return None
-        inc = all(values[i] < values[i + 1] for i in range(len(values) - 1))
-        dec = all(values[i] > values[i + 1] for i in range(len(values) - 1))
+        inc = all(values[i] <= values[i + 1] for i in range(len(values) - 1))
+        dec = all(values[i] >= values[i + 1] for i in range(len(values) - 1))
         if inc:
             return "increasing"
         if dec:
@@ -201,7 +201,10 @@ def _import_fits_payload(
         y.reverse()
         warnings.append("X axis was strictly decreasing; reversed order for canonical plotting.")
     elif direction == "non-monotonic":
-        warnings.append("X axis is non-monotonic; downstream tools may require monotonic X.")
+        order = sorted(range(len(x)), key=x.__getitem__)
+        x = [x[i] for i in order]
+        y = [y[i] for i in order]
+        warnings.append("X axis was non-monotonic; sorted by X for plotting.")
 
     final_x_unit = (x_unit or "").strip() or None
     final_y_unit = (y_unit or "").strip() or None

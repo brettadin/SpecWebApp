@@ -1,6 +1,6 @@
 # CAP Progress Inventory (repo scan)
 
-Date: 2025-12-17
+Date: 2025-12-18
 
 This is a repo-wide inventory mapping each CAP spec in `docs/CAPS/` to the current implementation state in `apps/api`, `apps/web`, tests, and supporting docs.
 
@@ -39,6 +39,7 @@ This is a repo-wide inventory mapping each CAP spec in `docs/CAPS/` to the curre
 **What’s working now**
 - Ingest preview (no hidden transforms) and ingest commit flows.
 - Format handling: delimited text, JCAMP-DX, FITS.
+- FITS ingest recognizes common filename variants (e.g., `.fts`, `.fits.gz`).
 - Messy-header/preamble capture and metadata extraction for delimited text ingest.
 - Basic trust warnings (missing units, non-monotonic X) and monotonic decreasing auto-reversal to canonical plotting.
 
@@ -73,6 +74,7 @@ This is a repo-wide inventory mapping each CAP spec in `docs/CAPS/` to the curre
 
 **Not yet / gaps vs full CAP**
 - Rich metadata editing UI (tags/collections/notes), search/filter beyond simple text filter in plot view.
+- Dataset list organization/hygiene UX (e.g., tabs/sections, collapse, “recent vs all”, hide/archive) to avoid scrolling through large libraries.
 - Sharing/permissions/audit trail (CAP-02’s full policy surface).
 - Dedupe rules and explicit dataset versioning semantics.
 

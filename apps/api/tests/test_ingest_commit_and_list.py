@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gzip
 import io
 import json
 import os
@@ -149,6 +150,74 @@ def test_ingest_commit_fits_creates_dataset(tmp_path) -> None:
     res = client.post(
         "/ingest/commit",
         files={"file": ("ok.fits", fits_bytes, "application/fits")},
+        data={"hdu_index": "1", "x_index": "0", "y_index": "1", "x_unit": "nm", "y_unit": "flux"},
+    )
+    assert res.status_code == 200
+    dataset_id = res.json()["dataset"]["id"]
+
+    meta_path = tmp_path / "datasets" / dataset_id / "dataset.json"
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    assert meta["parser"] == "fits"
+    assert meta["x"] == [1.0, 2.0, 3.0]
+    assert meta["y"] == [10.0, 20.0, 30.0]
+
+
+def test_ingest_commit_fits_fts_extension_creates_dataset(tmp_path) -> None:
+    os.environ["SPECTRA_DATA_DIR"] = str(tmp_path)
+
+    wave = np.array([1.0, 2.0, 3.0], dtype=np.float32)
+    flux = np.array([10.0, 20.0, 30.0], dtype=np.float32)
+    hdu = fits.BinTableHDU.from_columns(
+        [
+            fits.Column(name="wavelength", array=wave, format="E"),
+            fits.Column(name="flux", array=flux, format="E"),
+        ],
+        name="SPECTRUM",
+    )
+    hdul = fits.HDUList([fits.PrimaryHDU(), hdu])
+    buf = io.BytesIO()
+    hdul.writeto(buf)
+    fits_bytes = buf.getvalue()
+
+    client = TestClient(app)
+    res = client.post(
+        "/ingest/commit",
+        files={"file": ("ok.fts", fits_bytes, "application/fits")},
+        data={"hdu_index": "1", "x_index": "0", "y_index": "1", "x_unit": "nm", "y_unit": "flux"},
+    )
+    assert res.status_code == 200
+    dataset_id = res.json()["dataset"]["id"]
+
+    meta_path = tmp_path / "datasets" / dataset_id / "dataset.json"
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    assert meta["parser"] == "fits"
+    assert meta["x"] == [1.0, 2.0, 3.0]
+    assert meta["y"] == [10.0, 20.0, 30.0]
+
+
+def test_ingest_commit_fits_gz_extension_creates_dataset(tmp_path) -> None:
+    os.environ["SPECTRA_DATA_DIR"] = str(tmp_path)
+
+    wave = np.array([1.0, 2.0, 3.0], dtype=np.float32)
+    flux = np.array([10.0, 20.0, 30.0], dtype=np.float32)
+    hdu = fits.BinTableHDU.from_columns(
+        [
+            fits.Column(name="wavelength", array=wave, format="E"),
+            fits.Column(name="flux", array=flux, format="E"),
+        ],
+        name="SPECTRUM",
+    )
+    hdul = fits.HDUList([fits.PrimaryHDU(), hdu])
+    buf = io.BytesIO()
+    hdul.writeto(buf)
+    fits_bytes = buf.getvalue()
+
+    gz_bytes = gzip.compress(fits_bytes)
+
+    client = TestClient(app)
+    res = client.post(
+        "/ingest/commit",
+        files={"file": ("ok.fits.gz", gz_bytes, "application/gzip")},
         data={"hdu_index": "1", "x_index": "0", "y_index": "1", "x_unit": "nm", "y_unit": "flux"},
     )
     assert res.status_code == 200

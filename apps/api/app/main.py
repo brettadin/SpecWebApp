@@ -136,7 +136,7 @@ async def ingest_preview(
 ) -> IngestPreviewResponse:
     # CAP-01: preview and resolve uncertainty before creating a dataset.
     # This endpoint does not normalize or otherwise transform data.
-    raw = await file.read(5 * 1024 * 1024)
+    raw = await file.read(50 * 1024 * 1024)
     return build_ingest_preview(
         file_name=file.filename or "upload", raw=raw, max_rows=max_rows, hdu_index=hdu_index
     )
@@ -153,6 +153,7 @@ async def ingest_commit(
     y_unit: str = Form(""),
 ) -> IngestCommitResponse:
     source_name = file.filename or "upload"
+    source_lower = source_name.lower()
 
     raw = await file.read(50 * 1024 * 1024)
     if not raw:
@@ -167,17 +168,29 @@ async def ingest_commit(
     def monotonic_direction(values: list[float]) -> str | None:
         if len(values) < 3:
             return None
-        inc = all(values[i] < values[i + 1] for i in range(len(values) - 1))
-        dec = all(values[i] > values[i + 1] for i in range(len(values) - 1))
+        inc = all(values[i] <= values[i + 1] for i in range(len(values) - 1))
+        dec = all(values[i] >= values[i + 1] for i in range(len(values) - 1))
         if inc:
             return "increasing"
         if dec:
             return "decreasing"
         return "non-monotonic"
 
-    if ext in (".fits", ".fit"):
+    if source_lower.endswith((".fits", ".fit", ".fts", ".fits.gz", ".fit.gz", ".fts.gz")):
         from .fits_parser import extract_xy
         from .ingest_preview import ParsedDataset
+
+        fits_payload = raw
+        if source_lower.endswith(".gz") and raw[:2] == b"\x1f\x8b":
+            import gzip
+
+            try:
+                fits_payload = gzip.decompress(raw)
+            except Exception as err:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Failed to decompress gzip FITS payload: {err}",
+                ) from err
 
         if hdu_index is None:
             raise HTTPException(
@@ -191,7 +204,7 @@ async def ingest_commit(
             )
 
         x, y, decisions = extract_xy(
-            raw, hdu_index=hdu_index, x_col_index=x_index, y_col_index=y_index
+            fits_payload, hdu_index=hdu_index, x_col_index=x_index, y_col_index=y_index
         )
         warnings: list[str] = []
         direction = monotonic_direction(x)
@@ -202,7 +215,10 @@ async def ingest_commit(
                 "X axis was strictly decreasing; reversed order for canonical plotting."
             )
         elif direction == "non-monotonic":
-            warnings.append("X axis is non-monotonic; downstream tools may require monotonic X.")
+            order = sorted(range(len(x)), key=x.__getitem__)
+            x = [x[i] for i in order]
+            y = [y[i] for i in order]
+            warnings.append("X axis was non-monotonic; sorted by X for plotting.")
         if not x_unit.strip():
             warnings.append("X unit is missing; please confirm units for trustworthy comparisons.")
         if not y_unit.strip():
