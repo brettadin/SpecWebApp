@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spectra App - Scientific Data Analysis</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="scientific_theme.css">
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: var(--font-sans) !important;
+            background-color: rgb(from var(--background) r g b) !important;
+            color: rgb(from var(--foreground) r g b) !important;
+            overflow: hidden;
+        }
+        
+        .sidebar-collapsed {
+            transform: translateX(-100%);
+        }
+        
+        .main-content-expanded {
+            margin-left: 0 !important;
+        }
+        
+        .plot-container {
+            background: rgb(from var(--card) r g b);
+            border: 1px solid rgb(from var(--border) r g b);
+            border-radius: var(--radius-lg);
+        }
+        
+        .control-panel {
+            background: rgb(from var(--sidebar) r g b);
+            border: 1px solid rgb(from var(--sidebar-border) r g b);
+            border-radius: var(--radius-md);
+        }
+        
+        .dataset-item {
+            background: rgb(from var(--card) r g b);
+            border: 1px solid rgb(from var(--border) r g b);
+            border-radius: var(--radius-sm);
+            transition: all 0.2s ease;
+        }
+        
+        .dataset-item:hover {
+            background: rgb(from var(--accent) r g b / 0.1);
+            border-color: rgb(from var(--accent) r g b);
+        }
+        
+        .btn-primary {
+            background: rgb(from var(--primary) r g b) !important;
+            color: rgb(from var(--primary-foreground) r g b) !important;
+            border: none !important;
+            border-radius: var(--radius-sm) !important;
+            padding: 0.5rem 1rem !important;
+            font-weight: 500 !important;
+            transition: all 0.2s ease !important;
+        }
+        
+        .btn-primary:hover {
+            background: rgb(from var(--primary) r g b / 0.9) !important;
+            transform: translateY(-1px);
+            box-shadow: var(--shadow-md);
+        }
+        
+        .btn-secondary {
+            background: rgb(from var(--secondary) r g b) !important;
+            color: rgb(from var(--secondary-foreground) r g b) !important;
+            border: 1px solid rgb(from var(--border) r g b) !important;
+            border-radius: var(--radius-sm) !important;
+            padding: 0.5rem 1rem !important;
+            font-weight: 500 !important;
+            transition: all 0.2s ease !important;
+        }
+        
+        .btn-secondary:hover {
+            background: rgb(from var(--accent) r g b / 0.1) !important;
+            border-color: rgb(from var(--accent) r g b) !important;
+        }
+        
+        .input-field {
+            background: rgb(from var(--input) r g b) !important;
+            border: 1px solid rgb(from var(--border) r g b) !important;
+            color: rgb(from var(--foreground) r g b) !important;
+            border-radius: var(--radius-sm) !important;
+            padding: 0.5rem 0.75rem !important;
+            font-family: var(--font-mono) !important;
+            font-size: 0.875rem !important;
+        }
+        
+        .input-field:focus {
+            outline: none !important;
+            border-color: rgb(from var(--ring) r g b) !important;
+            box-shadow: 0 0 0 2px rgb(from var(--ring) r g b / 0.2) !important;
+        }
+        
+        .select-field {
+            background: rgb(from var(--input) r g b) !important;
+            border: 1px solid rgb(from var(--border) r g b) !important;
+            color: rgb(from var(--foreground) r g b) !important;
+            border-radius: var(--radius-sm) !important;
+            padding: 0.5rem 0.75rem !important;
+            font-size: 0.875rem !important;
+        }
+        
+        .header-bar {
+            background: rgb(from var(--card) r g b);
+            border-bottom: 1px solid rgb(from var(--border) r g b);
+            backdrop-filter: blur(8px);
+        }
+        
+        .sidebar {
+            background: rgb(from var(--sidebar) r g b);
+            border-right: 1px solid rgb(from var(--sidebar-border) r g b);
+            transition: transform 0.3s ease;
+        }
+        
+        .scrollbar-thin::-webkit-scrollbar {
+            width: 6px;
+        }
+        
+        .scrollbar-thin::-webkit-scrollbar-track {
+            background: rgb(from var(--muted) r g b);
+            border-radius: 3px;
+        }
+        
+        .scrollbar-thin::-webkit-scrollbar-thumb {
+            background: rgb(from var(--muted-foreground) r g b);
+            border-radius: 3px;
+        }
+        
+        .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+            background: rgb(from var(--accent) r g b);
+        }
+        
+        .plot-toolbar {
+            background: rgb(from var(--card) r g b / 0.8);
+            backdrop-filter: blur(4px);
+            border-bottom: 1px solid rgb(from var(--border) r g b);
+        }
+        
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: rgb(from var(--chart-2) r g b);
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .fade-in {
+            animation: fadeIn 0.3s ease-out;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .slide-in {
+            animation: slideIn 0.3s ease-out;
+        }
+        
+        @keyframes slideIn {
+            from { transform: translateX(-20px); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header Bar -->
+    <div class="header-bar h-14 flex items-center justify-between px-4 fixed top-0 left-0 right-0 z-50">
+        <div class="flex items-center space-x-4">
+            <button id="sidebarToggle" class="p-2 hover:bg-gray-700 rounded-md transition-colors">
+                <i data-lucide="menu" class="w-5 h-5"></i>
+            </button>
+            <div class="flex items-center space-x-2">
+                <i data-lucide="microscope" class="w-6 h-6 text-blue-400"></i>
+                <h1 class="text-lg font-semibold">Spectra App</h1>
+            </div>
+        </div>
+        
+        <div class="flex items-center space-x-4">
+            <div class="flex items-center space-x-2 bg-gray-800 rounded-lg px-3 py-1.5">
+                <i data-lucide="search" class="w-4 h-4 text-gray-400"></i>
+                <input type="text" placeholder="Search datasets..." class="bg-transparent border-none outline-none text-sm w-48">
+            </div>
+            <button class="p-2 hover:bg-gray-700 rounded-md transition-colors">
+                <i data-lucide="bar-chart-3" class="w-5 h-5"></i>
+            </button>
+            <button class="p-2 hover:bg-gray-700 rounded-md transition-colors">
+                <i data-lucide="settings" class="w-5 h-5"></i>
+            </button>
+        </div>
+    </div>
+
+    <div class="flex h-screen pt-14">
+        <!-- Left Sidebar -->
+        <div id="sidebar" class="sidebar w-80 h-full overflow-hidden flex flex-col">
+            <!-- Dataset Search & Controls -->
+            <div class="p-4 border-b border-gray-700">
+                <div class="space-y-3">
+                    <div class="grid grid-cols-2 gap-2">
+                        <input type="text" placeholder="Target name" class="input-field text-xs" value="M101">
+                        <input type="text" placeholder="Radius" class="input-field text-xs" value="0.1">
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <select class="select-field text-xs">
+                            <option>JWST</option>
+                            <option>HST</option>
+                            <option>Spitzer</option>
+                        </select>
+                        <select class="select-field text-xs">
+                            <option>spectrum</option>
+                            <option>photometry</option>
+                            <option>image</option>
+                        </select>
+                    </div>
+                    <div class="flex space-x-2">
+                        <button class="btn-primary flex-1 text-xs">Search</button>
+                        <button class="btn-secondary flex-1 text-xs">Refresh</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Datasets List -->
+            <div class="flex-1 overflow-y-auto scrollbar-thin">
+                <div class="p-4">
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 class="text-sm font-medium text-gray-300">Datasets</h3>
+                        <span class="text-xs text-gray-500">5 loaded</span>
+                    </div>
+                    
+                    <div class="space-y-2">
+                        <div class="dataset-item p-3 fade-in">
+                            <div class="flex items-start justify-between">
+                                <div class="flex-1 min-w-0">
+                                    <h4 class="text-sm font-medium truncate">Hydrogen_NIST_all_cleaned.csv</h4>
+                                    <p class="text-xs text-gray-400 mt-1">9ca8b0fc-441c-475d-b969-48d0047baded</p>
+                                    <div class="flex items-center mt-2 space-x-2">
+                                        <div class="status-indicator"></div>
+                                        <span class="text-xs text-gray-500">Active</span>
+                                    </div>
+                                </div>
+                                <button class="text-gray-400 hover:text-white p-1">
+                                    <i data-lucide="more-vertical" class="w-4 h-4"></i>
+                                </button>
+                            </div>
+                            <button class="btn-secondary w-full mt-2 text-xs">Edit metadata</button>
+                        </div>
+
+                        <div class="dataset-item p-3 fade-in">
+                            <div class="flex items-start justify-between">
+                                <div class="flex-1 min-w-0">
+                                    <h4 class="text-sm font-medium truncate">table_WASP-69-b-Schlawin-et-al-2024.csv</h4>
+                                    <p class="text-xs text-gray-400 mt-1">5cc26657-3514-4a43-ba0d-840222e15e9a</p>
+                                    <div class="flex items-center mt-2 space-x-2">
+                                        <div class="status-indicator"></div>
+                                        <span class="text-xs text-gray-500">Active</span>
+                                    </div>
+                                </div>
+                                <button class="text-gray-400 hover:text-white p-1">
+                                    <i data-lucide="more-vertical" class="w-4 h-4"></i>
+                                </button>
+                            </div>
+                            <button class="btn-secondary w-full mt-2 text-xs">Edit metadata</button>
+                        </div>
+
+                        <div class="dataset-item p-3 fade-in">
+                            <div class="flex items-start justify-between">
+                                <div class="flex-1 min-w-0">
+                                    <h4 class="text-sm font-medium truncate">Sun_USIS-1_HSRS_1_nm_20230909_173736.csv</h4>
+                                    <p class="text-xs text-gray-400 mt-1">a307f87e-5cd8-48e3-aa58-b9b6f21c3116</p>
+                                    <div class="flex items-center mt-2 space-x-2">
+                                        <div class="status-indicator"></div>
+                                        <span class="text-xs text-gray-500">Active</span>
+                                    </div>
+                                </div>
+                                <button class="text-gray-400 hover:text-white p-1">
+                                    <i data-lucide="more-vertical" class="w-4 h-4"></i>
+                                </button>
+                            </div>
+                            <button class="btn-secondary w-full mt-2 text-xs">Edit metadata</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content Area -->
+        <div id="mainContent" class="flex-1 flex flex-col ml-80 transition-all duration-300">
+            <!-- Plot Area -->
+            <div class="flex-1 p-4">
+                <div class="plot-container h-full flex flex-col">
+                    <!-- Plot Toolbar -->
+                    <div class="plot-toolbar p-3 flex items-center justify-between">
+                        <div class="flex items-center space-x-4">
+                            <h2 class="text-lg font-semibold">Interactive Spectrum</h2>
+                            <div class="flex items-center space-x-2 text-sm text-gray-400">
+                                <i data-lucide="layers" class="w-4 h-4"></i>
+                                <span>3 traces active</span>
+                            </div>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <button class="p-2 hover:bg-gray-700 rounded-md transition-colors">
+                                <i data-lucide="zoom-in" class="w-4 h-4"></i>
+                            </button>
+                            <button class="p-2 hover:bg-gray-700 rounded-md transition-colors">
+                                <i data-lucide="zoom-out" class="w-4 h-4"></i>
+                            </button>
+                            <button class="p-2 hover:bg-gray-700 rounded-md transition-colors">
+                                <i data-lucide="move" class="w-4 h-4"></i>
+                            </button>
+                            <button class="p-2 hover:bg-gray-700 rounded-md transition-colors">
+                                <i data-lucide="download" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Plot Container -->
+                    <div class="flex-1 p-4">
+                        <div id="plotDiv" class="w-full h-full bg-gray-900 rounded-lg"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bottom Controls Panel -->
+            <div class="h-48 p-4 pt-0">
+                <div class="control-panel h-full p-4 overflow-y-auto scrollbar-thin">
+                    <div class="grid grid-cols-4 gap-6 h-full">
+                        <!-- Smoothing Controls -->
+                        <div class="space-y-3">
+                            <h3 class="text-sm font-medium text-gray-300">Smoothing</h3>
+                            <select class="select-field w-full text-xs">
+                                <option>None</option>
+                                <option>Gaussian</option>
+                                <option>Savitzky-Golay</option>
+                            </select>
+                            <div class="flex space-x-2">
+                                <button class="btn-primary flex-1 text-xs">Apply</button>
+                                <button class="btn-secondary flex-1 text-xs">Clear</button>
+                            </div>
+                        </div>
+
+                        <!-- Differential Analysis -->
+                        <div class="space-y-3">
+                            <h3 class="text-sm font-medium text-gray-300">Differential (CAP-06)</h3>
+                            <div class="space-y-2">
+                                <select class="select-field w-full text-xs">
+                                    <option>(select)</option>
+                                    <option>Hydrogen_NIST</option>
+                                    <option>WASP-69-b</option>
+                                </select>
+                                <select class="select-field w-full text-xs">
+                                    <option>(select)</option>
+                                    <option>Sun_USIS</option>
+                                    <option>Jupiter_991005</option>
+                                </select>
+                                <select class="select-field w-full text-xs">
+                                    <option>A-B</option>
+                                    <option>A/B</option>
+                                    <option>A+B</option>
+                                </select>
+                            </div>
+                            <button class="btn-primary w-full text-xs">Compute</button>
+                        </div>
+
+                        <!-- Feature Detection -->
+                        <div class="space-y-3">
+                            <h3 class="text-sm font-medium text-gray-300">Feature Finder (CAP-09)</h3>
+                            <p class="text-xs text-gray-400">Runs on the selected trace(s) exactly as displayed</p>
+                            <div class="space-y-2">
+                                <select class="select-field w-full text-xs">
+                                    <option>Auto-detect peaks</option>
+                                    <option>Line identification</option>
+                                    <option>Continuum fitting</option>
+                                </select>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <select class="select-field text-xs">
+                                        <option>Linear</option>
+                                        <option>Polynomial</option>
+                                        <option>Spline</option>
+                                    </select>
+                                    <select class="select-field text-xs">
+                                        <option>Use A grid</option>
+                                        <option>Use B grid</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <button class="btn-primary w-full text-xs">Run Analysis</button>
+                        </div>
+
+                        <!-- Export & Save -->
+                        <div class="space-y-3">
+                            <h3 class="text-sm font-medium text-gray-300">Export & Save</h3>
+                            <div class="space-y-2">
+                                <button class="btn-secondary w-full text-xs">Save derived to Library</button>
+                                <button class="btn-secondary w-full text-xs">Export as CSV</button>
+                                <button class="btn-secondary w-full text-xs">Export as FITS</button>
+                                <button class="btn-secondary w-full text-xs">Generate Report</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Initialize Lucide icons
+        lucide.createIcons();
+
+        // Sidebar toggle functionality
+        const sidebarToggle = document.getElementById('sidebarToggle');
+        const sidebar = document.getElementById('sidebar');
+        const mainContent = document.getElementById('mainContent');
+
+        sidebarToggle.addEventListener('click', () => {
+            sidebar.classList.toggle('sidebar-collapsed');
+            mainContent.classList.toggle('main-content-expanded');
+        });
+
+        // Initialize Plotly chart
+        function initializePlot() {
+            // Sample spectroscopic data
+            const wavelength = [];
+            const intensity1 = [];
+            const intensity2 = [];
+            const intensity3 = [];
+
+            // Generate sample data
+            for (let i = 100; i <= 900; i += 2) {
+                wavelength.push(i);
+                intensity1.push(Math.random() * 100 + 200 + Math.sin(i/50) * 50);
+                intensity2.push(Math.random() * 80 + 150 + Math.cos(i/40) * 40);
+                intensity3.push(Math.random() * 60 + 100 + Math.sin(i/30) * 30);
+            }
+
+            // Add some spectral lines
+            const lines = [200, 300, 500, 656, 750];
+            lines.forEach(line => {
+                const index = wavelength.findIndex(w => w >= line);
+                if (index !== -1) {
+                    intensity1[index] += 400;
+                    intensity2[index] += 300;
+                    intensity3[index] += 200;
+                }
+            });
+
+            const trace1 = {
+                x: wavelength,
+                y: intensity1,
+                type: 'scatter',
+                mode: 'lines',
+                name: 'Hydrogen NIST',
+                line: { color: '#60A5FA', width: 2 }
+            };
+
+            const trace2 = {
+                x: wavelength,
+                y: intensity2,
+                type: 'scatter',
+                mode: 'lines',
+                name: 'WASP-69-b',
+                line: { color: '#34D399', width: 2 }
+            };
+
+            const trace3 = {
+                x: wavelength,
+                y: intensity3,
+                type: 'scatter',
+                mode: 'lines',
+                name: 'Sun USIS',
+                line: { color: '#FBBF24', width: 2 }
+            };
+
+            const layout = {
+                title: {
+                    text: 'Spectroscopic Data Analysis',
+                    font: { color: '#E5E7EB', size: 16 }
+                },
+                xaxis: {
+                    title: 'Wavelength (nm)',
+                    color: '#9CA3AF',
+                    gridcolor: '#374151',
+                    zerolinecolor: '#4B5563'
+                },
+                yaxis: {
+                    title: 'Intensity',
+                    color: '#9CA3AF',
+                    gridcolor: '#374151',
+                    zerolinecolor: '#4B5563'
+                },
+                plot_bgcolor: '#111827',
+                paper_bgcolor: '#111827',
+                font: { color: '#E5E7EB' },
+                legend: {
+                    x: 0.02,
+                    y: 0.98,
+                    bgcolor: 'rgba(17, 24, 39, 0.8)',
+                    bordercolor: '#374151',
+                    borderwidth: 1
+                },
+                margin: { l: 60, r: 20, t: 40, b: 60 }
+            };
+
+            const config = {
+                responsive: true,
+                displayModeBar: true,
+                modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d'],
+                displaylogo: false
+            };
+
+            Plotly.newPlot('plotDiv', [trace1, trace2, trace3], layout, config);
+        }
+
+        // Initialize the plot when the page loads
+        window.addEventListener('load', () => {
+            setTimeout(initializePlot, 100);
+        });
+
+        // Add smooth animations for dataset items
+        document.addEventListener('DOMContentLoaded', () => {
+            const datasetItems = document.querySelectorAll('.dataset-item');
+            datasetItems.forEach((item, index) => {
+                item.style.animationDelay = `${index * 0.1}s`;
+            });
+        });
+
+        // Resize plot when sidebar is toggled
+        sidebarToggle.addEventListener('click', () => {
+            setTimeout(() => {
+                Plotly.Plots.resize('plotDiv');
+            }, 300);
+        });
+    </script>
+</body>
+</html>
