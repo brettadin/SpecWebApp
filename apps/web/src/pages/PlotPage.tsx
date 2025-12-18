@@ -138,7 +138,14 @@ class PlotErrorBoundary extends Component<
   render() {
     if (this.state.hasError) {
       return (
-        <div style={{ border: '1px solid #e5e7eb', padding: '1rem' }}>
+        <div
+          style={{
+            border: '1px solid rgb(from var(--border) r g b)',
+            padding: '1rem',
+            borderRadius: '0.5rem',
+            background: 'rgb(from var(--card) r g b)',
+          }}
+        >
           <p style={{ margin: 0, color: 'crimson' }}>Plot failed to render.</p>
           <p style={{ marginTop: '0.5rem', marginBottom: 0, fontSize: '0.9rem' }}>{this.state.message}</p>
           <p style={{ marginTop: '0.5rem', marginBottom: 0, fontSize: '0.9rem' }}>
@@ -199,6 +206,8 @@ export function PlotPage() {
   const location = useLocation()
   const panelSlots = usePanelSlots()
   const rightSlot = panelSlots?.rightSlot ?? null
+  const uiBorder = '1px solid rgb(from var(--border) r g b)'
+  const uiMutedBg = 'rgb(from var(--muted) r g b)'
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [datasets, setDatasets] = useState<DatasetSummary[]>([])
@@ -209,6 +218,9 @@ export function PlotPage() {
   const [annotationsByDatasetId, setAnnotationsByDatasetId] = useState<Record<string, Annotation[]>>({})
   const [filter, setFilter] = useState('')
   const [showAnnotations, setShowAnnotations] = useState(false)
+
+  type InspectorTab = 'traces' | 'analyze' | 'annotate' | 'export'
+  const [activeInspectorTab, setActiveInspectorTab] = useState<InspectorTab>('traces')
 
   const [displayXUnit, setDisplayXUnit] = useState<DisplayXUnit>('as-imported')
   const [selectedTransformDatasetIds, setSelectedTransformDatasetIds] = useState<string[]>([])
@@ -510,16 +522,17 @@ export function PlotPage() {
 
   useEffect(() => {
     if (!restoreParams) return
+    const params = restoreParams
     let cancelled = false
 
     async function restore() {
       setError(null)
       setWarning(null)
       try {
-        const res = await fetch(`${API_BASE}/sessions/${encodeURIComponent(restoreParams.sessionId)}`)
+        const res = await fetch(`${API_BASE}/sessions/${encodeURIComponent(params.sessionId)}`)
         if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`)
         const json = (await res.json()) as { events?: Array<{ id: string; type: string; payload?: unknown }> }
-        const ev = (json.events ?? []).find((x) => x.id === restoreParams.eventId)
+        const ev = (json.events ?? []).find((x) => x.id === params.eventId)
         const snap = coercePlotSnapshotV1(ev?.payload)
         if (!snap) throw new Error('Snapshot payload is missing or unrecognized.')
         if (cancelled) return
@@ -569,7 +582,7 @@ export function PlotPage() {
         void logSessionEvent({
           type: 'snapshot.restore',
           message: 'Restored plot snapshot',
-          payload: { session_id: restoreParams.sessionId, event_id: restoreParams.eventId },
+          payload: { session_id: params.sessionId, event_id: params.eventId },
         })
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e))
@@ -1905,7 +1918,7 @@ export function PlotPage() {
 
         // Keep UI labels rich, but persist a compact label in annotations.
         const compactCandidateLabel =
-          top.kind === 'line'
+          top.kind === 'line' && typeof top.x_ref_display === 'number'
             ? `Line @ ${top.x_ref_display.toFixed(6)} ${xUnitLabel}`
             : top.label
 
@@ -2211,6 +2224,53 @@ export function PlotPage() {
 
   const inspectorContent = (
     <>
+      <div
+        role="tablist"
+        aria-label="Plot inspector sections"
+        style={{
+          display: 'flex',
+          gap: '0.5rem',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          padding: '0.25rem',
+          border: '1px solid rgb(from var(--border) r g b)',
+          borderRadius: '0.5rem',
+          background: 'rgb(from var(--card) r g b)',
+        }}
+      >
+        {(
+          [
+            { id: 'traces', label: 'Traces' },
+            { id: 'analyze', label: 'Analyze' },
+            { id: 'annotate', label: 'Annotate' },
+            { id: 'export', label: 'Export' },
+          ] as const
+        ).map((t) => {
+          const selected = activeInspectorTab === t.id
+          return (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={selected}
+              onClick={() => setActiveInspectorTab(t.id)}
+              style={{
+                cursor: 'pointer',
+                padding: '0.35rem 0.6rem',
+                borderRadius: '0.375rem',
+                border: '1px solid rgb(from var(--border) r g b)',
+                background: selected ? 'rgb(from var(--muted) r g b)' : 'transparent',
+                color: 'rgb(from var(--foreground) r g b)',
+                fontWeight: selected ? 700 : 500,
+              }}
+            >
+              {t.label}
+            </button>
+          )
+        })}
+      </div>
+
+      <div role="tabpanel" hidden={activeInspectorTab !== 'traces'} style={{ marginTop: '0.75rem' }}>
       <div>
         <label htmlFor="trace-filter" style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>
           Trace filter
@@ -2294,15 +2354,18 @@ export function PlotPage() {
           <p style={{ marginTop: '0.25rem' }}>No datasets found. Import one in Library first.</p>
         )}
       </div>
+      </div>
 
-      <div style={{ marginTop: '0.75rem', borderTop: '1px solid #e5e7eb', paddingTop: '0.75rem' }}>
+      <div role="tabpanel" hidden={activeInspectorTab !== 'analyze'} style={{ marginTop: '0.75rem' }}>
+
+      <div style={{ borderTop: uiBorder, paddingTop: '0.75rem' }}>
         <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>NIST ASD Lines (CAP-07)</div>
         <div style={{ fontSize: '0.9rem', opacity: 0.9 }}>
           Type what you’re searching for (e.g., <strong>Fe II</strong>) and fetch spectral lines directly as bar/stick overlays.
         </div>
 
         {nistError ? (
-          <div style={{ border: '1px solid #e5e7eb', padding: '0.5rem', marginTop: '0.5rem' }}>
+          <div style={{ border: uiBorder, padding: '0.5rem', marginTop: '0.5rem' }}>
             <p style={{ color: 'crimson', margin: 0 }}>{nistError}</p>
           </div>
         ) : null}
@@ -2335,7 +2398,7 @@ export function PlotPage() {
         </div>
       </div>
 
-      <div style={{ marginTop: '0.75rem', borderTop: '1px solid #e5e7eb', paddingTop: '0.75rem' }}>
+      <div style={{ marginTop: '0.75rem', borderTop: uiBorder, paddingTop: '0.75rem' }}>
         <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Transforms (CAP-05)</div>
 
         <div style={{ marginTop: '0.5rem' }}>
@@ -2499,7 +2562,7 @@ export function PlotPage() {
           </button>
         </div>
 
-        <div style={{ marginTop: '0.75rem', borderTop: '1px solid #e5e7eb', paddingTop: '0.75rem' }}>
+        <div style={{ marginTop: '0.75rem', borderTop: uiBorder, paddingTop: '0.75rem' }}>
           <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Differential (CAP-06)</div>
 
           <div style={{ display: 'grid', gap: '0.5rem' }}>
@@ -2633,14 +2696,14 @@ export function PlotPage() {
         </div>
       </div>
 
-      <div style={{ marginTop: '0.75rem', borderTop: '1px solid #e5e7eb', paddingTop: '0.75rem' }}>
+      <div style={{ marginTop: '0.75rem', borderTop: uiBorder, paddingTop: '0.75rem' }}>
         <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Feature Finder (CAP-09)</div>
         <div style={{ fontSize: '0.9rem', opacity: 0.9 }}>
           Runs on the selected trace(s) exactly as displayed (mode: {featureMode}, x unit: {xUnitLabel}).
         </div>
 
         {featureError ? (
-          <div style={{ border: '1px solid #e5e7eb', padding: '0.5rem', marginTop: '0.5rem' }}>
+        <div style={{ border: uiBorder, padding: '0.5rem', marginTop: '0.5rem' }}>
             <p style={{ color: 'crimson', margin: 0 }}>{featureError}</p>
           </div>
         ) : null}
@@ -2741,14 +2804,14 @@ export function PlotPage() {
                 </div>
               </div>
 
-              <div style={{ marginTop: '0.25rem', maxHeight: 180, overflow: 'auto', border: '1px solid #e5e7eb' }}>
+              <div style={{ marginTop: '0.25rem', maxHeight: 180, overflow: 'auto', border: uiBorder }}>
                 <table style={{ borderCollapse: 'collapse', width: '100%' }}>
                   <thead>
                     <tr>
-                      <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>Use</th>
-                      <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>x</th>
-                      <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>prom</th>
-                      <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>trace</th>
+                  <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>Use</th>
+                  <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>x</th>
+                  <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>prom</th>
+                  <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>trace</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2760,9 +2823,9 @@ export function PlotPage() {
                         <tr
                           key={id}
                           onClick={() => setHighlightedFeatureRowId((prev) => (prev === id ? null : id))}
-                          style={{ cursor: 'pointer', background: highlighted ? '#f3f4f6' : undefined }}
+                    style={{ cursor: 'pointer', background: highlighted ? uiMutedBg : undefined }}
                         >
-                          <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>
+                    <td style={{ padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>
                             <input
                               type="checkbox"
                               onClick={(e) => e.stopPropagation()}
@@ -2773,13 +2836,13 @@ export function PlotPage() {
                               }}
                             />
                           </td>
-                          <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>
+                    <td style={{ padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>
                             {Number.isFinite(f.center_x) ? f.center_x.toFixed(6) : ''}
                           </td>
-                          <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>
+                    <td style={{ padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>
                             {typeof f.prominence === 'number' ? f.prominence.toFixed(3) : ''}
                           </td>
-                          <td title={f.trace_name} style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>
+                    <td title={f.trace_name} style={{ padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>
                             {f.trace_kind === 'derived' ? 'derived' : 'original'}
                           </td>
                         </tr>
@@ -2802,14 +2865,14 @@ export function PlotPage() {
         </div>
       </div>
 
-      <div style={{ marginTop: '0.75rem', borderTop: '1px solid #e5e7eb', paddingTop: '0.75rem' }}>
+      <div style={{ marginTop: '0.75rem', borderTop: uiBorder, paddingTop: '0.75rem' }}>
         <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Match (CAP-09)</div>
         <div style={{ fontSize: '0.9rem', opacity: 0.9 }}>
           Matches features to a reference: line lists (tolerance window) or band/range intervals.
         </div>
 
         {matchError ? (
-          <div style={{ border: '1px solid #e5e7eb', padding: '0.5rem', marginTop: '0.5rem' }}>
+          <div style={{ border: uiBorder, padding: '0.5rem', marginTop: '0.5rem' }}>
             <p style={{ color: 'crimson', margin: 0 }}>{matchError}</p>
           </div>
         ) : null}
@@ -2927,14 +2990,14 @@ export function PlotPage() {
                 </div>
               ) : null}
 
-              <div style={{ marginTop: '0.25rem', maxHeight: 200, overflow: 'auto', border: '1px solid #e5e7eb' }}>
+              <div style={{ marginTop: '0.25rem', maxHeight: 200, overflow: 'auto', border: uiBorder }}>
                 <table style={{ borderCollapse: 'collapse', width: '100%' }}>
                   <thead>
                     <tr>
-                      <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>x</th>
-                      <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>top candidate</th>
-                      <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>score</th>
-                      <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>cands</th>
+                  <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>x</th>
+                  <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>top candidate</th>
+                  <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>score</th>
+                  <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>cands</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2952,18 +3015,18 @@ export function PlotPage() {
                         <tr
                           key={m.feature_row_id}
                           onClick={() => setHighlightedFeatureRowId((prev) => (prev === m.feature_row_id ? null : m.feature_row_id))}
-                          style={{ cursor: 'pointer', background: highlighted ? '#f3f4f6' : undefined }}
+                        style={{ cursor: 'pointer', background: highlighted ? uiMutedBg : undefined }}
                         >
-                          <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>
+                        <td style={{ padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>
                             {Number.isFinite(m.feature_center_x_display) ? m.feature_center_x_display.toFixed(6) : ''}
                           </td>
-                          <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>
+                        <td style={{ padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>
                             {top ? `${top.label}${ambiguous ? ' (ambiguous)' : ''}` : '(none)'}
                           </td>
-                          <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>
+                        <td style={{ padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>
                             {top ? top.score.toFixed(3) : ''}
                           </td>
-                          <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>
+                        <td style={{ padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>
                             {m.candidates.length}
                           </td>
                         </tr>
@@ -2974,7 +3037,7 @@ export function PlotPage() {
               </div>
 
               {selectedMatchResult ? (
-                <div style={{ marginTop: '0.5rem', border: '1px solid #e5e7eb', padding: '0.5rem' }}>
+              <div style={{ marginTop: '0.5rem', border: uiBorder, padding: '0.5rem' }}>
                   {(() => {
                     const top = selectedMatchResult.candidates[0]
                     const second = selectedMatchResult.candidates[1]
@@ -3009,17 +3072,17 @@ export function PlotPage() {
                       <thead>
                         {matchReferenceType === 'line-list' ? (
                           <tr>
-                            <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>candidate</th>
-                            <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>x_ref</th>
-                            <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>Δ</th>
-                            <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>score</th>
-                            <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>strength</th>
+                        <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>candidate</th>
+                        <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>x_ref</th>
+                        <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>Δ</th>
+                        <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>score</th>
+                        <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>strength</th>
                           </tr>
                         ) : (
                           <tr>
-                            <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>band</th>
-                            <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>range</th>
-                            <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>score</th>
+                        <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>band</th>
+                        <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>range</th>
+                        <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>score</th>
                           </tr>
                         )}
                       </thead>
@@ -3031,11 +3094,11 @@ export function PlotPage() {
                             const strength = typeof c.strength === 'number' ? c.strength.toFixed(3) : ''
                             return (
                               <tr key={idx}>
-                                <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>{c.label}</td>
-                                <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>{xRef}</td>
-                                <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>{dx}</td>
-                                <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>{c.score.toFixed(3)}</td>
-                                <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>{strength}</td>
+                              <td style={{ padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>{c.label}</td>
+                              <td style={{ padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>{xRef}</td>
+                              <td style={{ padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>{dx}</td>
+                              <td style={{ padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>{c.score.toFixed(3)}</td>
+                              <td style={{ padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>{strength}</td>
                               </tr>
                             )
                           }
@@ -3046,9 +3109,9 @@ export function PlotPage() {
                               : ''
                           return (
                             <tr key={idx}>
-                              <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>{c.label}</td>
-                              <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>{lo}</td>
-                              <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>{c.score.toFixed(3)}</td>
+                            <td style={{ padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>{c.label}</td>
+                            <td style={{ padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>{lo}</td>
+                            <td style={{ padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>{c.score.toFixed(3)}</td>
                             </tr>
                           )
                         })}
@@ -3070,8 +3133,11 @@ export function PlotPage() {
           ) : null}
         </div>
       </div>
+      </div>
 
-      <div style={{ marginTop: '0.75rem', borderTop: '1px solid #e5e7eb', paddingTop: '0.75rem' }}>
+      <div role="tabpanel" hidden={activeInspectorTab !== 'annotate'} style={{ marginTop: '0.75rem' }}>
+
+      <div style={{ borderTop: uiBorder, paddingTop: '0.75rem' }}>
         <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Annotations (CAP-04)</div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
           <div style={{ fontWeight: 700 }}>Annotations</div>
@@ -3166,8 +3232,11 @@ export function PlotPage() {
           </div>
         ) : null}
       </div>
+      </div>
 
-      <div style={{ marginTop: '0.75rem', borderTop: '1px solid #e5e7eb', paddingTop: '0.75rem' }}>
+      <div role="tabpanel" hidden={activeInspectorTab !== 'export'} style={{ marginTop: '0.75rem' }}>
+
+      <div style={{ borderTop: uiBorder, paddingTop: '0.75rem' }}>
         <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Status</div>
         <div>Overlay count: {visibleDatasetIds.length}</div>
         <div>
@@ -3176,7 +3245,7 @@ export function PlotPage() {
         <div>Derived count: {derivedTraces.length}</div>
       </div>
 
-      <div style={{ marginTop: '0.75rem', borderTop: '1px solid #e5e7eb', paddingTop: '0.75rem' }}>
+      <div style={{ marginTop: '0.75rem', borderTop: uiBorder, paddingTop: '0.75rem' }}>
         <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Export (CAP-11)</div>
         <button
           type="button"
@@ -3187,6 +3256,7 @@ export function PlotPage() {
           {exportBusy ? 'Exporting…' : 'Export what I see (.zip)'}
         </button>
         {exportError ? <p style={{ color: 'crimson', marginTop: '0.5rem' }}>{exportError}</p> : null}
+      </div>
       </div>
     </>
   )
@@ -3208,25 +3278,25 @@ export function PlotPage() {
         }}
       >
         {!rightSlot ? (
-          <aside style={{ borderRight: '1px solid #e5e7eb', paddingRight: '1rem' }}>
+          <aside style={{ borderRight: uiBorder, paddingRight: '1rem' }}>
             {inspectorContent}
           </aside>
         ) : null}
 
         <div>
           {visibleDatasetIds.length === 0 ? (
-            <div style={{ border: '1px solid #e5e7eb', padding: '1rem' }}>
+            <div style={{ border: uiBorder, padding: '1rem' }}>
               <p style={{ margin: 0 }}>Select one or more traces to plot.</p>
             </div>
           ) : (
-            <div style={{ border: '1px solid #e5e7eb' }}>
+            <div style={{ border: uiBorder }}>
               <PlotErrorBoundary>
                 <PlotComponent
                   data={plotData}
                   layout={plotLayout}
                   config={{ displaylogo: false, responsive: true }}
                   onClick={onPlotClick}
-                  onRelayout={(e) => setPlotlyRelayout(e as Record<string, unknown>)}
+                  onRelayout={(e: unknown) => setPlotlyRelayout(e as Record<string, unknown>)}
                   style={{ width: '100%', height: '520px' }}
                 />
               </PlotErrorBoundary>

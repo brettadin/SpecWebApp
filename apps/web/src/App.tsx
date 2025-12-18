@@ -11,13 +11,16 @@ import { NotebookPage } from './pages/NotebookPage'
 import { PlotPage } from './pages/PlotPage'
 
 const navStyle = ({ isActive }: { isActive: boolean }) => ({
-  fontWeight: isActive ? 700 : 400,
+  fontWeight: isActive ? 700 : 500,
   textDecoration: 'none',
-  padding: '0.25rem 0.5rem',
+  padding: '0.35rem 0.6rem',
+  borderRadius: 'var(--radius-md)',
+  border: `1px solid ${isActive ? 'rgb(from var(--border) r g b)' : 'transparent'}`,
+  background: isActive ? 'rgb(from var(--muted) r g b)' : 'transparent',
+  transition: 'background-color 160ms ease, border-color 160ms ease',
 })
 
 const borderColor = 'rgb(from var(--border) r g b)'
-const cardBg = 'rgb(from var(--card) r g b)'
 const popoverBg = 'rgb(from var(--popover) r g b)'
 const inputBg = 'rgb(from var(--input) r g b)'
 const textMuted = 'rgb(from var(--muted-foreground) r g b)'
@@ -115,8 +118,9 @@ function AppShell() {
           zIndex: 50,
           borderBottom: `1px solid ${borderColor}`,
           padding: '0.75rem 1rem',
-          background: cardBg,
+          background: 'rgb(from var(--card) r g b / 0.85)',
           backdropFilter: 'blur(8px)',
+          boxShadow: 'var(--shadow-sm)',
         }}
       >
         <nav style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -132,11 +136,12 @@ function AppShell() {
             }}
             style={{
               fontWeight: leftCollapsed ? 400 : 700,
-              padding: '0.25rem 0.5rem',
+              padding: '0.35rem 0.6rem',
               border: `1px solid ${borderColor}`,
-              background: 'transparent',
+              background: leftCollapsed ? 'transparent' : 'rgb(from var(--muted) r g b)',
               cursor: 'pointer',
-              borderRadius: 'var(--radius-sm)',
+              borderRadius: 'var(--radius-md)',
+              transition: 'background-color 160ms ease, border-color 160ms ease',
             }}
             title={leftCollapsed ? 'Show Library panel' : 'Hide Library panel'}
           >
@@ -160,11 +165,12 @@ function AppShell() {
             }}
             style={{
               fontWeight: rightCollapsed ? 400 : 700,
-              padding: '0.25rem 0.5rem',
+              padding: '0.35rem 0.6rem',
               border: `1px solid ${borderColor}`,
-              background: 'transparent',
+              background: rightCollapsed ? 'transparent' : 'rgb(from var(--muted) r g b)',
               cursor: 'pointer',
-              borderRadius: 'var(--radius-sm)',
+              borderRadius: 'var(--radius-md)',
+              transition: 'background-color 160ms ease, border-color 160ms ease',
             }}
             title={rightCollapsed ? 'Show Inspector panel' : 'Hide Inspector panel'}
           >
@@ -205,11 +211,12 @@ function AppShell() {
               placeholder="Search (datasets / pages)…"
               style={{
                 width: '100%',
-                padding: '0.25rem 0.5rem',
+                padding: '0.45rem 0.6rem',
                 border: `1px solid ${borderColor}`,
-                borderRadius: '0.25rem',
+                borderRadius: 'var(--radius-md)',
                 background: inputBg,
                 color: 'rgb(from var(--foreground) r g b)',
+                boxShadow: 'var(--shadow-xs)',
               }}
             />
 
@@ -239,10 +246,10 @@ function AppShell() {
                     onClick={() => onGoToPage('/plot')}
                     style={{
                       border: `1px solid ${borderColor}`,
-                      background: 'transparent',
+                      background: 'rgb(from var(--card) r g b)',
                       cursor: 'pointer',
-                      padding: '0.25rem 0.5rem',
-                      borderRadius: 'var(--radius-sm)',
+                      padding: '0.35rem 0.6rem',
+                      borderRadius: 'var(--radius-md)',
                     }}
                   >
                     Plot
@@ -252,10 +259,10 @@ function AppShell() {
                     onClick={() => onGoToPage('/docs')}
                     style={{
                       border: `1px solid ${borderColor}`,
-                      background: 'transparent',
+                      background: 'rgb(from var(--card) r g b)',
                       cursor: 'pointer',
-                      padding: '0.25rem 0.5rem',
-                      borderRadius: 'var(--radius-sm)',
+                      padding: '0.35rem 0.6rem',
+                      borderRadius: 'var(--radius-md)',
                     }}
                   >
                     Docs
@@ -273,10 +280,10 @@ function AppShell() {
                         style={{
                           textAlign: 'left',
                           border: `1px solid ${borderColor}`,
-                          padding: '0.25rem 0.5rem',
-                          background: 'transparent',
+                          padding: '0.35rem 0.6rem',
+                          background: 'rgb(from var(--card) r g b)',
                           cursor: 'pointer',
-                          borderRadius: 'var(--radius-sm)',
+                          borderRadius: 'var(--radius-md)',
                         }}
                       >
                         <div style={{ fontWeight: 700 }}>{d.name || d.id}</div>
@@ -304,10 +311,10 @@ function AppShell() {
                         style={{
                           textAlign: 'left',
                           border: `1px solid ${borderColor}`,
-                          padding: '0.25rem 0.5rem',
-                          background: 'transparent',
+                          padding: '0.35rem 0.6rem',
+                          background: 'rgb(from var(--card) r g b)',
                           cursor: 'pointer',
-                          borderRadius: 'var(--radius-sm)',
+                          borderRadius: 'var(--radius-md)',
                         }}
                       >
                         <div style={{ fontWeight: 700 }}>
@@ -347,6 +354,7 @@ function AppShell() {
             display: leftCollapsed ? 'none' : 'block',
             background: 'rgb(from var(--sidebar) r g b)',
             color: 'rgb(from var(--sidebar-foreground) r g b)',
+            boxShadow: leftCollapsed ? 'none' : 'var(--shadow-sm)',
           }}
         >
           <LibraryPage />
@@ -366,6 +374,7 @@ function AppShell() {
             display: rightCollapsed ? 'none' : 'block',
             background: 'rgb(from var(--sidebar) r g b)',
             color: 'rgb(from var(--sidebar-foreground) r g b)',
+            boxShadow: rightCollapsed ? 'none' : 'var(--shadow-sm)',
           }}
         >
           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.75rem' }}>
