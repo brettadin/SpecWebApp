@@ -1,5 +1,18 @@
-import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Link, useLocation } from 'react-router-dom'
+
+import { onDatasetsChanged } from '../lib/appEvents'
+import { saveCachedDatasets } from '../lib/datasetCache'
+import { saveMastHandoffPrefs } from '../lib/mastHandoff'
+import { logSessionEvent } from '../lib/sessionLogging'
+import {
+  loadTargetResolutionCache,
+  loadTargetResolutionPreference,
+  parseRaDecDegrees,
+  saveTargetResolutionCache,
+  saveTargetResolutionPreference,
+  type TargetResolutionCandidate,
+} from '../lib/targetResolution'
 
 type IngestPreviewResponse = {
   file_name: string
@@ -39,6 +52,13 @@ type DatasetSummary = {
   } | null
 }
 
+type DatasetDetail = DatasetSummary & {
+  x_unit: string | null
+  y_unit: string | null
+  x_count: number
+  warnings: string[]
+}
+
 type IngestCommitResponse = {
   dataset: {
     id: string
@@ -64,6 +84,7 @@ type MastNameLookupRow = {
   resolved_dec?: number
   ra?: number
   dec?: number
+  input?: string
 }
 
 type MastCaomRow = {
@@ -113,6 +134,7 @@ type TelescopeFITSPreviewResponse = {
 }
 
 export function LibraryPage() {
+    const location = useLocation()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [refBusy, setRefBusy] = useState(false)
@@ -125,6 +147,13 @@ export function LibraryPage() {
   const [yUnit, setYUnit] = useState('')
   const [datasets, setDatasets] = useState<DatasetSummary[]>([])
   const [commitResult, setCommitResult] = useState<IngestCommitResponse | null>(null)
+
+  const [editDatasetId, setEditDatasetId] = useState<string | null>(null)
+  const [editBusy, setEditBusy] = useState(false)
+  const [editError, setEditError] = useState<string | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editXUnit, setEditXUnit] = useState('')
+  const [editYUnit, setEditYUnit] = useState('')
 
   const [refUrl, setRefUrl] = useState('')
   const [refTitle, setRefTitle] = useState('')
@@ -151,6 +180,13 @@ export function LibraryPage() {
   const [mastRefresh, setMastRefresh] = useState(false)
 
   const [mastResolved, setMastResolved] = useState<{ ra: number; dec: number } | null>(null)
+  const [mastResolutionLabel, setMastResolutionLabel] = useState<string | null>(null)
+  const [mastLookupCandidates, setMastLookupCandidates] = useState<TargetResolutionCandidate[]>([])
+  const [mastSelectedCandidate, setMastSelectedCandidate] = useState<TargetResolutionCandidate | null>(null)
+  const [mastLookupFromCache, setMastLookupFromCache] = useState(false)
+  const [mastLookupRetrievedAt, setMastLookupRetrievedAt] = useState<string | null>(null)
+
+  const [mastLastAutoToken, setMastLastAutoToken] = useState<string | null>(null)
   const [mastCaomRows, setMastCaomRows] = useState<MastCaomRow[]>([])
   const [mastSelectedObsId, setMastSelectedObsId] = useState<number | string | null>(null)
   const [mastProducts, setMastProducts] = useState<MastProductRow[]>([])
@@ -177,11 +213,25 @@ export function LibraryPage() {
   >(null)
 
   async function refreshDatasets() {
-    const res = await fetch('http://localhost:8000/datasets')
-    if (!res.ok) return
-    const json = (await res.json()) as DatasetSummary[]
-    setDatasets(json)
+    try {
+      const res = await fetch('http://localhost:8000/datasets')
+      if (!res.ok) return
+      const json = (await res.json()) as DatasetSummary[]
+      setDatasets(json)
+      saveCachedDatasets(json)
+    } catch {
+      // Non-fatal: in tests or when API is down, avoid unhandled rejections.
+      return
+    }
   }
+
+  useEffect(() => {
+    void refreshDatasets()
+    const off = onDatasetsChanged(() => {
+      void refreshDatasets()
+    })
+    return off
+  }, [])
 
   async function fetchPreview(file: File, hduIndex: number | null) {
     const form = new FormData()
@@ -198,6 +248,72 @@ export function LibraryPage() {
       throw new Error(text || `HTTP ${res.status}`)
     }
     return (await res.json()) as IngestPreviewResponse
+  }
+
+  async function loadDatasetForEdit(datasetId: string) {
+    setEditError(null)
+    setEditBusy(true)
+    try {
+      const res = await fetch(`http://localhost:8000/datasets/${encodeURIComponent(datasetId)}`)
+      if (!res.ok) {
+        const text = await res.text()
+        throw new Error(text || `HTTP ${res.status}`)
+      }
+
+      const json = (await res.json()) as DatasetDetail
+      setEditName(json.name || '')
+      setEditXUnit(json.x_unit || '')
+      setEditYUnit(json.y_unit || '')
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      if (/failed to fetch|networkerror|fetch\s*failed/i.test(msg)) {
+        setEditError(`${msg}. Is the API running on http://localhost:8000?`)
+      } else {
+        setEditError(msg)
+      }
+    } finally {
+      setEditBusy(false)
+    }
+  }
+
+  async function onToggleEditDataset(datasetId: string) {
+    if (editDatasetId === datasetId) {
+      setEditDatasetId(null)
+      setEditError(null)
+      return
+    }
+
+    setEditDatasetId(datasetId)
+    await loadDatasetForEdit(datasetId)
+  }
+
+  async function onSaveDatasetMetadata() {
+    if (!editDatasetId) return
+    setEditError(null)
+    setEditBusy(true)
+    try {
+      const res = await fetch(`http://localhost:8000/datasets/${encodeURIComponent(editDatasetId)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: editName, x_unit: editXUnit, y_unit: editYUnit }),
+      })
+      if (!res.ok) {
+        const text = await res.text()
+        throw new Error(text || `HTTP ${res.status}`)
+      }
+
+      const json = (await res.json()) as DatasetDetail
+      await refreshDatasets()
+      void logSessionEvent({
+        type: 'dataset.metadata_update',
+        message: `Updated dataset metadata: ${json.name}`,
+        payload: { dataset_id: editDatasetId, name: json.name, x_unit: json.x_unit, y_unit: json.y_unit },
+      })
+    } catch (e) {
+      setEditError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setEditBusy(false)
+    }
   }
 
   async function onPickFile(file: File | null) {
@@ -279,6 +395,11 @@ export function LibraryPage() {
       const json = (await res.json()) as IngestCommitResponse
       setCommitResult(json)
       await refreshDatasets()
+      void logSessionEvent({
+        type: 'ingest.commit',
+        message: `Imported ${json.dataset.name}`,
+        payload: { dataset_id: json.dataset.id, source_file_name: json.dataset.source_file_name },
+      })
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -320,6 +441,11 @@ export function LibraryPage() {
         throw new Error(text || `HTTP ${res.status}`)
       }
       await refreshDatasets()
+      void logSessionEvent({
+        type: 'reference.import',
+        message: `Imported reference: ${refTitle.trim()}`,
+        payload: { source_url: url, source_name: refSourceName.trim() || 'Unknown' },
+      })
       setRefUrl('')
       setRefTitle('')
       setRefCitation('')
@@ -369,6 +495,11 @@ export function LibraryPage() {
         throw new Error(text || `HTTP ${res.status}`)
       }
       await refreshDatasets()
+      void logSessionEvent({
+        type: 'line_list.import',
+        message: `Imported line list: ${lineTitle.trim()}`,
+        payload: { source_url: url, source_name: lineSourceName.trim() || 'Unknown' },
+      })
       setLineUrl('')
       setLineTitle('')
       setLineCitation('')
@@ -379,11 +510,21 @@ export function LibraryPage() {
     }
   }
 
-  async function onMastSearch() {
+  async function performMastSearch(opts: {
+    target: string
+    radiusDeg: number
+    mission: 'JWST' | 'HST' | 'HLSP' | ''
+    dataType: 'spectrum' | 'cube' | ''
+  }) {
     setMastError(null)
     setMastImported(null)
     setMastPreview(null)
     setMastResolved(null)
+    setMastResolutionLabel(null)
+    setMastLookupCandidates([])
+    setMastSelectedCandidate(null)
+    setMastLookupFromCache(false)
+    setMastLookupRetrievedAt(null)
     setMastCaomRows([])
     setMastSelectedObsId(null)
     setMastProducts([])
@@ -393,6 +534,143 @@ export function LibraryPage() {
     setMastXIndex('')
     setMastYIndex('')
 
+    const target = opts.target.trim()
+    if (!target) return
+
+    const radius = opts.radiusDeg
+    if (!Number.isFinite(radius) || radius <= 0) {
+      setMastError('Radius must be a positive number (degrees).')
+      return
+    }
+
+    saveMastHandoffPrefs({ radiusDeg: radius, mission: opts.mission, dataType: opts.dataType })
+
+    // Keep UI controls consistent with the search we’re running.
+    setMastTarget((prev) => (prev === target ? prev : target))
+    setMastRadius((prev) => (prev === String(radius) ? prev : String(radius)))
+    setMastMission((prev) => (prev === opts.mission ? prev : opts.mission))
+    setMastDataType((prev) => (prev === opts.dataType ? prev : opts.dataType))
+
+    setMastBusy(true)
+    try {
+      let ra: number
+      let dec: number
+
+      const coords = parseRaDecDegrees(target)
+      if (coords) {
+        ra = coords.ra
+        dec = coords.dec
+        setMastResolved({ ra, dec })
+        setMastResolutionLabel('Using coordinates from input (CAP-15)')
+        void logSessionEvent({
+          type: 'target.resolve',
+          message: 'Resolved target input as coordinates',
+          payload: { input: target, ra, dec, mode: 'coords' },
+        })
+      } else {
+        const cached = loadTargetResolutionCache(target)
+        const preferred = loadTargetResolutionPreference(target)
+
+        let candidates: TargetResolutionCandidate[] = []
+        let retrievedAt: string | null = null
+        let fromCache = false
+
+        try {
+          const lookupRes = await fetch('http://localhost:8000/telescope/mast/name-lookup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ input: target }),
+          })
+          if (!lookupRes.ok) throw new Error((await lookupRes.text()) || `HTTP ${lookupRes.status}`)
+          const lookupJson = (await lookupRes.json()) as MastInvokeResponse
+          if (lookupJson.status !== 'COMPLETE') throw new Error(lookupJson.msg || 'MAST name lookup failed')
+
+          const rows = Array.isArray(lookupJson.data) ? (lookupJson.data as MastNameLookupRow[]) : []
+          candidates = rows
+            .map((r) => {
+              const ra = r.resolved_ra ?? r.ra
+              const dec = r.resolved_dec ?? r.dec
+              if (typeof ra !== 'number' || typeof dec !== 'number') return null
+              const label = String(r.input ?? target).trim() || target
+              return { label, ra, dec }
+            })
+            .filter((x): x is TargetResolutionCandidate => Boolean(x))
+            .slice(0, 10)
+
+          retrievedAt = new Date().toISOString()
+          if (candidates.length) saveTargetResolutionCache(target, { retrieved_at: retrievedAt, candidates })
+        } catch (e) {
+          // Offline / API-down fallback: use cached lookup results if present.
+          if (cached) {
+            candidates = cached.candidates
+            retrievedAt = cached.retrieved_at
+            fromCache = true
+          } else {
+            throw e
+          }
+        }
+
+        setMastLookupCandidates(candidates)
+        setMastLookupRetrievedAt(retrievedAt)
+        setMastLookupFromCache(fromCache)
+
+        const preferredCandidate =
+          preferred && candidates.length
+            ? candidates.find((c) => Math.abs(c.ra - preferred.ra) < 1e-9 && Math.abs(c.dec - preferred.dec) < 1e-9) ?? null
+            : null
+
+        // CAP-15: never silently pick the wrong thing. If multiple matches exist, require an explicit selection
+        // unless the user has a remembered preference.
+        const chosen = candidates.length === 1 ? candidates[0] : preferredCandidate
+        if (!chosen) {
+          setMastResolutionLabel('Multiple target matches — select one below (CAP-15)')
+          return
+        }
+
+        setMastSelectedCandidate(chosen)
+        setMastResolved({ ra: chosen.ra, dec: chosen.dec })
+        setMastResolutionLabel(`Resolved target: ${chosen.label} (CAP-15${fromCache ? '; cached' : ''})`)
+        saveTargetResolutionPreference(target, { ra: chosen.ra, dec: chosen.dec })
+        void logSessionEvent({
+          type: 'target.resolve',
+          message: `Resolved target: ${chosen.label}`,
+          payload: { input: target, ra: chosen.ra, dec: chosen.dec, mode: 'mast-name-lookup', cached: fromCache },
+        })
+
+        ra = chosen.ra
+        dec = chosen.dec
+      }
+
+      const missions = opts.mission ? [opts.mission] : undefined
+      const dataproduct_types = opts.dataType ? [opts.dataType] : undefined
+
+      const searchRes = await fetch('http://localhost:8000/telescope/mast/caom-search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ra,
+          dec,
+          radius,
+          missions,
+          dataproduct_types,
+          pagesize: 50,
+          page: 1,
+        }),
+      })
+      if (!searchRes.ok) throw new Error((await searchRes.text()) || `HTTP ${searchRes.status}`)
+      const searchJson = (await searchRes.json()) as MastInvokeResponse
+      if (searchJson.status !== 'COMPLETE') throw new Error(searchJson.msg || 'MAST search failed')
+
+      const rows = Array.isArray(searchJson.data) ? (searchJson.data as MastCaomRow[]) : []
+      setMastCaomRows(rows)
+    } catch (e) {
+      setMastError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setMastBusy(false)
+    }
+  }
+
+  async function onMastSearch() {
     const target = mastTarget.trim()
     if (!target) return
 
@@ -402,34 +680,77 @@ export function LibraryPage() {
       return
     }
 
+    await performMastSearch({ target, radiusDeg: radius, mission: mastMission, dataType: mastDataType })
+  }
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search)
+    const mastTargetParam = params.get('mastTarget')
+    const mastAuto = params.get('mastAutoSearch')
+    const mastToken = params.get('mastToken')
+
+    const radiusParam = params.get('mastRadius')
+    const missionParam = params.get('mastMission') as 'JWST' | 'HST' | 'HLSP' | '' | null
+    const dataTypeParam = params.get('mastDataType') as 'spectrum' | 'cube' | '' | null
+
+    const target = (mastTargetParam ?? '').trim()
+    if (target) setMastTarget((prev) => (prev === target ? prev : target))
+    if (radiusParam && radiusParam.trim()) setMastRadius((prev) => (prev === radiusParam ? prev : radiusParam))
+    if (missionParam != null) setMastMission((prev) => (prev === missionParam ? prev : missionParam))
+    if (dataTypeParam != null) setMastDataType((prev) => (prev === dataTypeParam ? prev : dataTypeParam))
+
+    if (mastAuto === '1' && target && mastToken && mastToken !== mastLastAutoToken) {
+      setMastLastAutoToken(mastToken)
+      const radius = radiusParam && radiusParam.trim() ? Number(radiusParam) : Number(mastRadius)
+      const mission = missionParam ?? mastMission
+      const dataType = dataTypeParam ?? mastDataType
+
+      void performMastSearch({
+        target,
+        radiusDeg: Number.isFinite(radius) ? radius : Number(mastRadius),
+        mission,
+        dataType,
+      }).catch(() => {
+        // avoid unhandled rejections in tests/offline scenarios
+      })
+    }
+  }, [location.search, mastDataType, mastLastAutoToken, mastMission, mastRadius])
+
+  async function onPickMastCandidate(c: TargetResolutionCandidate) {
+    // Explicit disambiguation choice (CAP-15).
+    setMastError(null)
+    setMastCaomRows([])
+    setMastProducts([])
+    setMastSelectedObsId(null)
+    setMastPreview(null)
+    setMastImported(null)
+    setMastSelectedDataURI('')
+    setMastSelectedFilename('')
+    setMastHduIndex('')
+    setMastXIndex('')
+    setMastYIndex('')
+
+    setMastSelectedCandidate(c)
+    setMastResolved({ ra: c.ra, dec: c.dec })
+    setMastResolutionLabel(`Resolved target: ${c.label} (CAP-15)`)
+    saveTargetResolutionPreference(mastTarget, { ra: c.ra, dec: c.dec })
+
+    // Continue directly into the MAST search using the chosen coordinates.
+    const target = mastTarget.trim()
+    const radius = Number(mastRadius)
+    if (!target || !Number.isFinite(radius) || radius <= 0) return
+
+    const missions = mastMission ? [mastMission] : undefined
+    const dataproduct_types = mastDataType ? [mastDataType] : undefined
+
     setMastBusy(true)
     try {
-      const lookupRes = await fetch('http://localhost:8000/telescope/mast/name-lookup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ input: target }),
-      })
-      if (!lookupRes.ok) throw new Error((await lookupRes.text()) || `HTTP ${lookupRes.status}`)
-      const lookupJson = (await lookupRes.json()) as MastInvokeResponse
-      if (lookupJson.status !== 'COMPLETE') throw new Error(lookupJson.msg || 'MAST name lookup failed')
-
-      const first = Array.isArray(lookupJson.data) ? (lookupJson.data[0] as MastNameLookupRow | undefined) : undefined
-      const ra = first?.resolved_ra ?? first?.ra
-      const dec = first?.resolved_dec ?? first?.dec
-      if (typeof ra !== 'number' || typeof dec !== 'number') {
-        throw new Error('MAST name lookup returned no resolved coordinates')
-      }
-      setMastResolved({ ra, dec })
-
-      const missions = mastMission ? [mastMission] : undefined
-      const dataproduct_types = mastDataType ? [mastDataType] : undefined
-
       const searchRes = await fetch('http://localhost:8000/telescope/mast/caom-search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ra,
-          dec,
+          ra: c.ra,
+          dec: c.dec,
           radius,
           missions,
           dataproduct_types,
@@ -607,6 +928,18 @@ export function LibraryPage() {
       const json = (await res.json()) as { id: string; name: string; created_at: string; source_file_name: string; sha256: string }
       setMastImported(json)
       await refreshDatasets()
+      void logSessionEvent({
+        type: 'mast.import',
+        message: `Imported from MAST: ${json.name}`,
+        payload: {
+          dataset_id: json.id,
+          target: mastTarget.trim(),
+          obsid: mastSelectedObsId ?? null,
+          data_uri: mastSelectedDataURI.trim(),
+          product_filename: mastSelectedFilename.trim() || null,
+          mission: mastMission || 'Other',
+        },
+      })
     } catch (e) {
       setMastError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -1075,7 +1408,39 @@ export function LibraryPage() {
 
           {mastResolved ? (
             <div style={{ fontSize: '0.875rem', opacity: 0.85 }}>
-              Resolved: RA {mastResolved.ra.toFixed(6)}, Dec {mastResolved.dec.toFixed(6)}
+              {mastResolutionLabel ? <div>{mastResolutionLabel}</div> : null}
+              <div>
+                RA {mastResolved.ra.toFixed(6)}, Dec {mastResolved.dec.toFixed(6)}
+                {mastLookupRetrievedAt ? ` — retrieved ${mastLookupRetrievedAt}${mastLookupFromCache ? ' (cached)' : ''}` : ''}
+              </div>
+            </div>
+          ) : null}
+
+          {mastLookupCandidates.length > 1 && !mastResolved ? (
+            <div style={{ border: '1px solid #e5e7eb', padding: '0.5rem' }}>
+              <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Disambiguate target (CAP-15)</div>
+              <div style={{ fontSize: '0.875rem', opacity: 0.85, marginBottom: '0.5rem' }}>
+                Multiple matches were returned. Pick one to continue.
+              </div>
+              <div style={{ display: 'grid', gap: '0.25rem' }}>
+                {mastLookupCandidates.map((c) => {
+                  const checked = mastSelectedCandidate != null && c.ra === mastSelectedCandidate.ra && c.dec === mastSelectedCandidate.dec
+                  return (
+                    <label key={`${c.label}:${c.ra}:${c.dec}`} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                      <input
+                        type="radio"
+                        name="mast-target-candidate"
+                        checked={checked}
+                        onChange={() => void onPickMastCandidate(c)}
+                        disabled={mastBusy}
+                      />
+                      <span>
+                        {c.label} — RA {c.ra.toFixed(6)}, Dec {c.dec.toFixed(6)}
+                      </span>
+                    </label>
+                  )
+                })}
+              </div>
             </div>
           ) : null}
 
@@ -1422,8 +1787,13 @@ export function LibraryPage() {
           <ul>
             {datasets.map((d) => (
               <li key={d.id}>
-                <div>
-                  {d.name} ({d.id})
+                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <div>
+                    {d.name} ({d.id})
+                  </div>
+                  <button type="button" onClick={() => void onToggleEditDataset(d.id)} disabled={editBusy}>
+                    {editDatasetId === d.id ? 'Close editor' : 'Edit metadata'}
+                  </button>
                 </div>
                 {d.reference ? (
                   <div style={{ fontSize: '0.875rem', opacity: 0.85 }}>
@@ -1435,6 +1805,53 @@ export function LibraryPage() {
                     {d.reference.license_redistribution_allowed
                       ? ` (redistribution: ${d.reference.license_redistribution_allowed})`
                       : ''}
+                  </div>
+                ) : null}
+
+                {editDatasetId === d.id ? (
+                  <div style={{ marginTop: '0.5rem' }}>
+                    {editError ? (
+                      <div style={{ color: 'crimson', marginBottom: '0.5rem' }}>{editError}</div>
+                    ) : null}
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem' }}>
+                      <label>
+                        <div style={{ marginBottom: '0.25rem' }}>Name</div>
+                        <input
+                          value={editName}
+                          onChange={(e) => setEditName(e.target.value)}
+                          disabled={editBusy}
+                          style={{ width: '100%' }}
+                        />
+                      </label>
+                      <label>
+                        <div style={{ marginBottom: '0.25rem' }}>X unit</div>
+                        <input
+                          value={editXUnit}
+                          onChange={(e) => setEditXUnit(e.target.value)}
+                          disabled={editBusy}
+                          placeholder="(optional)"
+                          style={{ width: '100%' }}
+                        />
+                      </label>
+                      <label>
+                        <div style={{ marginBottom: '0.25rem' }}>Y unit</div>
+                        <input
+                          value={editYUnit}
+                          onChange={(e) => setEditYUnit(e.target.value)}
+                          disabled={editBusy}
+                          placeholder="(optional)"
+                          style={{ width: '100%' }}
+                        />
+                      </label>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+                      <button type="button" onClick={() => void onSaveDatasetMetadata()} disabled={editBusy}>
+                        {editBusy ? 'Saving…' : 'Save metadata'}
+                      </button>
+                      <Link to={`/plot?dataset=${encodeURIComponent(d.id)}`}>Open in Plot</Link>
+                    </div>
                   </div>
                 ) : null}
               </li>

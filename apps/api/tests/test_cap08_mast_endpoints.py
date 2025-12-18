@@ -59,6 +59,7 @@ _TEST_TOKEN = "testtoken"
 
 class _Handler(BaseHTTPRequestHandler):
     download_requests = 0
+    download_failures_remaining = 0
 
     def do_POST(self):  # noqa: N802
         if self.path == "/invoke":
@@ -129,6 +130,12 @@ class _Handler(BaseHTTPRequestHandler):
             body = self.rfile.read(length).decode("utf-8")
             parsed = urllib.parse.parse_qs(body)
             uri = parsed.get("uri", [""])[0]
+
+            if uri == _DATA_URI and type(self).download_failures_remaining > 0:
+                type(self).download_failures_remaining -= 1
+                self.send_response(503)
+                self.end_headers()
+                return
 
             if uri == _PROTECTED_DATA_URI:
                 if self.headers.get("Authorization") != f"Bearer {_TEST_TOKEN}":
@@ -224,6 +231,7 @@ def test_cap08_mast_download_preview_and_import(tmp_path: Path, monkeypatch: Mon
     try:
         client = TestClient(app)
         _Handler.download_requests = 0
+        _Handler.download_failures_remaining = 0
 
         preview = client.post(
             "/telescope/mast/preview/fits-by-data-uri",
@@ -302,6 +310,44 @@ def test_cap08_mast_download_preview_and_import(tmp_path: Path, monkeypatch: Mon
         assert ref_query.get("calib_level") == 3
         assert ref_query.get("product_type") == "science"
         assert ref_query.get("recommended") is True
+    finally:
+        httpd.shutdown()
+
+
+def test_cap08_mast_download_retries_transient_503_then_success(
+    tmp_path: Path, monkeypatch: MonkeyPatch
+):
+    monkeypatch.setenv("SPECTRA_DATA_DIR", str(tmp_path))
+
+    # Keep the test deterministic/fast.
+    monkeypatch.setenv("MAST_RETRY_MAX_ATTEMPTS", "2")
+    monkeypatch.setenv("MAST_RETRY_BACKOFF_BASE_S", "0")
+    monkeypatch.setenv("MAST_RETRY_BACKOFF_MAX_S", "0")
+    monkeypatch.setenv("MAST_RETRY_SLEEP_ENABLED", "0")
+
+    httpd, invoke_url, download_url = _serve_once()
+    monkeypatch.setenv("MAST_API_BASE_URL", invoke_url)
+    monkeypatch.setenv("MAST_DOWNLOAD_FILE_URL", download_url)
+
+    try:
+        client = TestClient(app)
+        _Handler.download_requests = 0
+        _Handler.download_failures_remaining = 1
+
+        preview = client.post(
+            "/telescope/mast/preview/fits-by-data-uri",
+            json={
+                "data_uri": _DATA_URI,
+                "product_filename": "example_x1d.fits",
+                "mission": "JWST",
+                "source_name": "MAST",
+                "citation_text": "MAST (example), retrieved for testing",
+                "query": {"obsid": 123},
+            },
+        )
+
+        assert preview.status_code == 200, preview.text
+        assert _Handler.download_requests == 2, "expected one transient 503 then a retry"
     finally:
         httpd.shutdown()
 

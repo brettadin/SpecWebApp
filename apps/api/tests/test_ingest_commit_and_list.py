@@ -41,6 +41,39 @@ def test_ingest_commit_creates_dataset_and_lists(tmp_path) -> None:
     assert any(d["id"] == dataset_id for d in listed)
 
 
+def test_dataset_patch_updates_name_and_units(tmp_path) -> None:
+    os.environ["SPECTRA_DATA_DIR"] = str(tmp_path)
+
+    client = TestClient(app)
+    csv_bytes = b"x,y\n1,10\n2,20\n3,30\n"
+
+    res = client.post(
+        "/ingest/commit",
+        files={"file": ("ok.csv", csv_bytes, "text/csv")},
+        data={"x_index": "0", "y_index": "1", "x_unit": "nm", "y_unit": "flux"},
+    )
+    assert res.status_code == 200
+    dataset_id = res.json()["dataset"]["id"]
+
+    res_patch = client.patch(
+        f"/datasets/{dataset_id}",
+        json={"name": "Renamed", "x_unit": "", "y_unit": "Jy"},
+    )
+    assert res_patch.status_code == 200
+    body = res_patch.json()
+    assert body["id"] == dataset_id
+    assert body["name"] == "Renamed"
+    assert body["x_unit"] is None
+    assert body["y_unit"] == "Jy"
+
+    # Persisted metadata updated
+    meta_path = tmp_path / "datasets" / dataset_id / "dataset.json"
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    assert meta["name"] == "Renamed"
+    assert meta["x_unit"] is None
+    assert meta["y_unit"] == "Jy"
+
+
 def test_ingest_commit_reverses_decreasing_x(tmp_path) -> None:
     os.environ["SPECTRA_DATA_DIR"] = str(tmp_path)
 

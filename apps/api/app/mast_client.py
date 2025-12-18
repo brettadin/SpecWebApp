@@ -4,6 +4,7 @@ import dataclasses
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -60,6 +61,145 @@ class MastHTTPError(RuntimeError):
         self.message = message
 
 
+@dataclasses.dataclass(frozen=True)
+class _RetryConfig:
+    max_attempts: int
+    backoff_base_s: float
+    backoff_max_s: float
+    sleep_enabled: bool
+
+
+def _retry_config_from_env() -> _RetryConfig:
+    def _get_int(name: str, default: int) -> int:
+        raw = (os.environ.get(name) or "").strip()
+        if not raw:
+            return default
+        try:
+            return int(raw)
+        except Exception:  # noqa: BLE001
+            return default
+
+    def _get_float(name: str, default: float) -> float:
+        raw = (os.environ.get(name) or "").strip()
+        if not raw:
+            return default
+        try:
+            return float(raw)
+        except Exception:  # noqa: BLE001
+            return default
+
+    max_attempts = max(1, _get_int("MAST_RETRY_MAX_ATTEMPTS", 3))
+    backoff_base_s = max(0.0, _get_float("MAST_RETRY_BACKOFF_BASE_S", 0.5))
+    backoff_max_s = max(0.0, _get_float("MAST_RETRY_BACKOFF_MAX_S", 4.0))
+
+    raw_sleep = (os.environ.get("MAST_RETRY_SLEEP_ENABLED") or "1").strip().lower()
+    sleep_enabled = raw_sleep not in ("0", "false", "no")
+
+    return _RetryConfig(
+        max_attempts=max_attempts,
+        backoff_base_s=backoff_base_s,
+        backoff_max_s=backoff_max_s,
+        sleep_enabled=sleep_enabled,
+    )
+
+
+def _should_retry_http_status(status_code: int) -> bool:
+    return status_code in (408, 429, 500, 502, 503, 504)
+
+
+def _sleep_backoff(cfg: _RetryConfig, *, attempt_index: int, retry_after_s: float | None) -> None:
+    if not cfg.sleep_enabled:
+        return
+
+    delay = cfg.backoff_base_s * (2 ** max(0, attempt_index - 1))
+    delay = min(delay, cfg.backoff_max_s)
+    if retry_after_s is not None:
+        delay = min(max(0.0, retry_after_s), cfg.backoff_max_s)
+
+    if delay > 0:
+        time.sleep(delay)
+
+
+def _parse_retry_after_seconds(headers: Any) -> float | None:
+    try:
+        raw = headers.get("Retry-After")
+        if raw is None:
+            return None
+        text = str(raw).strip()
+        if not text:
+            return None
+        # MAST commonly returns seconds here.
+        return float(text)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _is_timeoutish_error(err: BaseException) -> bool:
+    if isinstance(err, TimeoutError):
+        return True
+    msg = str(err).lower()
+    return "timed out" in msg or "timeout" in msg
+
+
+def _urlopen_read_with_retry(
+    req: urllib.request.Request,
+    *,
+    timeout_s: int,
+    read_limit: int | None = None,
+) -> bytes:
+    cfg = _retry_config_from_env()
+    last_error: BaseException | None = None
+
+    for attempt in range(1, cfg.max_attempts + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout_s) as resp:
+                return resp.read() if read_limit is None else resp.read(read_limit)
+        except urllib.error.HTTPError as err:
+            last_error = err
+            status = int(getattr(err, "code", 0) or 0)
+            retryable = status and _should_retry_http_status(status)
+            retry_after = _parse_retry_after_seconds(getattr(err, "headers", None))
+
+            if retryable and attempt < cfg.max_attempts:
+                _sleep_backoff(cfg, attempt_index=attempt, retry_after_s=retry_after)
+                continue
+
+            try:
+                body = err.read(16 * 1024)
+                text = body.decode("utf-8", errors="replace")
+            except Exception:  # noqa: BLE001
+                text = ""
+
+            msg = f"MAST request failed ({status})" if status else "MAST request failed"
+            if text.strip():
+                msg = f"{msg}: {text.strip()}"
+            raise MastHTTPError(status or 502, msg) from err
+        except urllib.error.URLError as err:
+            last_error = err
+            reason = getattr(err, "reason", err)
+            is_timeout = _is_timeoutish_error(reason)
+            if attempt < cfg.max_attempts:
+                _sleep_backoff(cfg, attempt_index=attempt, retry_after_s=None)
+                continue
+
+            msg = f"MAST request failed: {reason}".strip()
+            if is_timeout:
+                raise TimeoutError(msg) from err
+            raise MastHTTPError(502, msg) from err
+        except TimeoutError as err:
+            last_error = err
+            if attempt < cfg.max_attempts:
+                _sleep_backoff(cfg, attempt_index=attempt, retry_after_s=None)
+                continue
+            raise
+
+    if last_error is not None:
+        if _is_timeoutish_error(last_error):
+            raise TimeoutError(str(last_error))
+        raise MastHTTPError(502, str(last_error))
+    raise MastHTTPError(502, "MAST request failed")
+
+
 def mast_invoke(request: dict[str, Any], *, timeout_s: int = 30) -> dict[str, Any]:
     """Invoke a MAST API request.
 
@@ -69,11 +209,11 @@ def mast_invoke(request: dict[str, Any], *, timeout_s: int = 30) -> dict[str, An
     Note: Auth/token handling is intentionally not implemented yet (CAP-08 follow-up).
     """
 
-    version = ".".join(map(str, sys.version_info[:3]))
+    py_version = ".".join(map(str, sys.version_info[:3]))
     headers = {
         "Content-Type": "application/x-www-form-urlencoded",
-        "Accept": "text/plain",
-        "User-Agent": f"python-requests/{version}",
+        "Accept": "application/json, text/plain;q=0.9, */*;q=0.8",
+        "User-Agent": f"SpecWebApp (python-urllib/{py_version})",
         **_mast_auth_headers(),
     }
 
@@ -87,21 +227,8 @@ def mast_invoke(request: dict[str, Any], *, timeout_s: int = 30) -> dict[str, An
         headers=headers,
         method="POST",
     )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout_s) as resp:
-            raw = resp.read()
-    except urllib.error.HTTPError as err:
-        try:
-            body = err.read()
-            text = body.decode("utf-8", errors="replace")
-        except Exception:  # noqa: BLE001
-            text = ""
-        msg = f"MAST invoke failed ({err.code})"
-        if text.strip():
-            msg = f"{msg}: {text.strip()}"
-        raise MastHTTPError(err.code, msg) from err
-
-    text = raw.decode("utf-8")
+    raw = _urlopen_read_with_retry(req, timeout_s=timeout_s)
+    text = raw.decode("utf-8", errors="replace")
     return json.loads(text)
 
 
@@ -429,18 +556,10 @@ def mast_download_file_with_cache_info(
             pass
 
     try:
-        with urllib.request.urlopen(req, timeout=timeout_s) as resp:
-            raw = resp.read(500 * 1024 * 1024)
-    except urllib.error.HTTPError as err:
-        try:
-            body = err.read()
-            text = body.decode("utf-8", errors="replace")
-        except Exception:  # noqa: BLE001
-            text = ""
-        msg = f"MAST download failed ({err.code})"
-        if text.strip():
-            msg = f"{msg}: {text.strip()}"
-        raise MastHTTPError(err.code, msg) from err
+        raw = _urlopen_read_with_retry(req, timeout_s=timeout_s, read_limit=500 * 1024 * 1024)
+    except MastHTTPError as err:
+        # Keep the error message stable for download call sites.
+        raise MastHTTPError(err.status_code, err.message) from err
 
     downloaded_at = datetime.now(tz=UTC).isoformat()
     sha = sha256(raw).hexdigest()

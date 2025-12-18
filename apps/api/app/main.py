@@ -23,12 +23,14 @@ from .annotations import (
 )
 from .datasets import (
     DatasetDetail,
+    DatasetMetadataPatch,
     DatasetSummary,
     IngestCommitResponse,
     datasets_root,
     get_dataset_detail,
     get_dataset_xy,
     list_datasets,
+    patch_dataset_metadata,
     save_dataset,
     sha256_bytes,
 )
@@ -44,6 +46,19 @@ from .reference_import import (
     ReferenceImportLineListCSVRequest,
     import_reference_jcamp_dx,
     import_reference_line_list_csv,
+)
+from .sessions import (
+    SessionAddEventRequest,
+    SessionCreateRequest,
+    SessionDetail,
+    SessionEvent,
+    SessionSummary,
+    add_session_event,
+    create_session,
+    get_session,
+)
+from .sessions import (
+    list_sessions as list_sessions_impl,
 )
 from .telescope_import import (
     TelescopeFITSImportByDataURIRequest,
@@ -82,6 +97,35 @@ app.add_middleware(
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok", "version": read_version()}
+
+
+# --- CAP-10: Session notebook + history (MVP) ---
+
+
+@app.get("/sessions", response_model=list[SessionSummary])
+def list_sessions() -> list[SessionSummary]:
+    return list_sessions_impl()
+
+
+@app.post("/sessions", response_model=SessionDetail)
+def post_session(req: SessionCreateRequest) -> SessionDetail:
+    return create_session(req)
+
+
+@app.get("/sessions/{session_id}", response_model=SessionDetail)
+def get_session_by_id(session_id: str) -> SessionDetail:
+    try:
+        return get_session(session_id)
+    except FileNotFoundError as err:
+        raise HTTPException(status_code=404, detail="Session not found") from err
+
+
+@app.post("/sessions/{session_id}/events", response_model=SessionEvent)
+def post_session_event(session_id: str, req: SessionAddEventRequest) -> SessionEvent:
+    try:
+        return add_session_event(session_id, req)
+    except FileNotFoundError as err:
+        raise HTTPException(status_code=404, detail="Session not found") from err
 
 
 @app.post("/ingest/preview", response_model=IngestPreviewResponse)
@@ -273,6 +317,16 @@ def datasets_list() -> list[DatasetSummary]:
 @app.get("/datasets/{dataset_id}", response_model=DatasetDetail)
 def datasets_get(dataset_id: str) -> DatasetDetail:
     return get_dataset_detail(dataset_id)
+
+
+@app.patch("/datasets/{dataset_id}", response_model=DatasetDetail)
+def datasets_patch(dataset_id: str, patch: DatasetMetadataPatch) -> DatasetDetail:
+    try:
+        return patch_dataset_metadata(dataset_id, patch)
+    except FileNotFoundError as err:
+        raise HTTPException(status_code=404, detail="Dataset not found") from err
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
 
 
 @app.get("/datasets/{dataset_id}/data")
@@ -468,6 +522,8 @@ def telescope_mast_name_lookup(req: MastNameLookupRequest) -> dict:
         if status >= 500:
             raise HTTPException(status_code=502, detail=err.message) from err
         raise HTTPException(status_code=status, detail=err.message) from err
+    except TimeoutError as err:
+        raise HTTPException(status_code=504, detail=str(err)) from err
     except Exception as err:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=str(err)) from err
 
@@ -482,6 +538,8 @@ def telescope_mast_caom_search(req: MastCaomConeRequest) -> dict:
         if status >= 500:
             raise HTTPException(status_code=502, detail=err.message) from err
         raise HTTPException(status_code=status, detail=err.message) from err
+    except TimeoutError as err:
+        raise HTTPException(status_code=504, detail=str(err)) from err
     except Exception as err:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=str(err)) from err
 
@@ -496,6 +554,8 @@ def telescope_mast_caom_products(req: MastCaomProductsRequest) -> dict:
         if status >= 500:
             raise HTTPException(status_code=502, detail=err.message) from err
         raise HTTPException(status_code=status, detail=err.message) from err
+    except TimeoutError as err:
+        raise HTTPException(status_code=504, detail=str(err)) from err
     except Exception as err:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=str(err)) from err
 

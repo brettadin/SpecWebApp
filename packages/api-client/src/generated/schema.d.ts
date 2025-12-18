@@ -35,7 +35,8 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /** Datasets Patch */
+        patch: operations["datasets_patch_datasets__dataset_id__patch"];
         trace?: never;
     };
     "/datasets/{dataset_id}/annotations": {
@@ -254,6 +255,58 @@ export interface paths {
         put?: never;
         /** References Import Line List Csv */
         post: operations["references_import_line_list_csv_references_import_line_list_csv_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Sessions */
+        get: operations["list_sessions_sessions_get"];
+        put?: never;
+        /** Post Session */
+        post: operations["post_session_sessions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Session By Id */
+        get: operations["get_session_by_id_sessions__session_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/{session_id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Session Event */
+        post: operations["post_session_event_sessions__session_id__events_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -515,6 +568,15 @@ export interface components {
             x_unit: string | null;
             /** Y Unit */
             y_unit: string | null;
+        };
+        /** DatasetMetadataPatch */
+        DatasetMetadataPatch: {
+            /** Name */
+            name?: string | null;
+            /** X Unit */
+            x_unit?: string | null;
+            /** Y Unit */
+            y_unit?: string | null;
         };
         /** DatasetSummary */
         DatasetSummary: {
@@ -799,6 +861,68 @@ export interface components {
             source_url?: string | null;
             /** Trust Tier */
             trust_tier?: string | null;
+        };
+        /** SessionAddEventRequest */
+        SessionAddEventRequest: {
+            /** Message */
+            message?: string | null;
+            /** Payload */
+            payload?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Type
+             * @default note
+             */
+            type: string;
+        };
+        /** SessionCreateRequest */
+        SessionCreateRequest: {
+            /** Title */
+            title?: string | null;
+        };
+        /** SessionDetail */
+        SessionDetail: {
+            /** Created At */
+            created_at: string;
+            /** Event Count */
+            event_count: number;
+            /** Events */
+            events: components["schemas"]["SessionEvent"][];
+            /** Id */
+            id: string;
+            /** Last Event At */
+            last_event_at?: string | null;
+            /** Title */
+            title: string;
+        };
+        /** SessionEvent */
+        SessionEvent: {
+            /** Created At */
+            created_at: string;
+            /** Id */
+            id: string;
+            /** Message */
+            message?: string | null;
+            /** Payload */
+            payload?: {
+                [key: string]: unknown;
+            } | null;
+            /** Type */
+            type: string;
+        };
+        /** SessionSummary */
+        SessionSummary: {
+            /** Created At */
+            created_at: string;
+            /** Event Count */
+            event_count: number;
+            /** Id */
+            id: string;
+            /** Last Event At */
+            last_event_at?: string | null;
+            /** Title */
+            title: string;
         };
         /** TelescopeFITSImportByDataURIRequest */
         TelescopeFITSImportByDataURIRequest: {
@@ -1100,6 +1224,41 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatasetDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    datasets_patch_datasets__dataset_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DatasetMetadataPatch"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -1568,6 +1727,125 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DatasetDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_sessions_sessions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionSummary"][];
+                };
+            };
+        };
+    };
+    post_session_sessions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SessionCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_session_by_id_sessions__session_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_session_event_sessions__session_id__events_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SessionAddEventRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionEvent"];
                 };
             };
             /** @description Validation Error */

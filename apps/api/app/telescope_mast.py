@@ -45,7 +45,7 @@ class MastCaomProductsRequest(BaseModel):
 def mast_name_lookup(req: MastNameLookupRequest) -> dict[str, Any]:
     request: dict[str, Any] = {
         "service": "Mast.Name.Lookup",
-        "params": {"input": req.input, "format": "json"},
+        "params": {"input": req.input},
         "format": "json",
     }
     return mast_invoke(request)

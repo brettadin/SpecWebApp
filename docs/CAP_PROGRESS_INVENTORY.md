@@ -23,7 +23,7 @@ This is a repo-wide inventory mapping each CAP spec in `docs/CAPS/` to the curre
 | CAP-07 | Reference sources + line lists + citation-first imports | In progress |
 | CAP-08 | Telescope/archive retrieval (MAST) + FITS extraction | In progress |
 | CAP-09 | Feature detection + identification assistance | In progress |
-| CAP-10 | Session notebook + history + workspaces | Not started |
+| CAP-10 | Session notebook + history + workspaces | In progress |
 | CAP-11 | Exports + reproducible bundles | Implemented (core) |
 | CAP-12 | Quality gates + regression prevention | Implemented (core) |
 | CAP-13 | UI design system + interaction rules | In progress |
@@ -63,6 +63,7 @@ This is a repo-wide inventory mapping each CAP spec in `docs/CAPS/` to the curre
 
 **What’s working now**
 - Local-first dataset storage (raw bytes + `dataset.json`) with listing + detail APIs.
+- Dataset metadata editing (rename + X/Y units) via `PATCH /datasets/{dataset_id}` and a lightweight inline editor in the Library dataset list.
 - Minimal “trust-first” reference summary exposed in dataset list (for CAP-07/CAP-08 imports).
 
 **Primary evidence**
@@ -71,7 +72,7 @@ This is a repo-wide inventory mapping each CAP spec in `docs/CAPS/` to the curre
 - Web listing usage: `apps/web/src/pages/LibraryPage.tsx`, `apps/web/src/pages/PlotPage.tsx`
 
 **Not yet / gaps vs full CAP**
-- Metadata editing UI (units/title/tags/collections), search/filter beyond simple text filter in plot view.
+- Rich metadata editing UI (tags/collections/notes), search/filter beyond simple text filter in plot view.
 - Sharing/permissions/audit trail (CAP-02’s full policy surface).
 - Dedupe rules and explicit dataset versioning semantics.
 
@@ -229,13 +230,21 @@ This is a repo-wide inventory mapping each CAP spec in `docs/CAPS/` to the curre
 
 ## CAP-10 — Session notebook, history, and collaboration workspaces
 
-**Status:** Not started
+**Status:** In progress
 
 **What’s present**
-- Placeholder page only.
+- Local-first session notebook MVP:
+  - Create and list sessions.
+  - Add freeform note events.
+  - View a simple event timeline in the Notebook panel.
+  - Mark a session as “active” and auto-log key actions (imports, derived saves, exports, annotations, differential, transforms, feature detection).
 
 **Primary evidence**
-- Placeholder UI: `apps/web/src/pages/NotebookPage.tsx`
+- API storage + models: `apps/api/app/sessions.py`
+- API endpoints: `apps/api/app/main.py`
+- Notebook panel UI: `apps/web/src/pages/NotebookPage.tsx`
+- Session logging helper: `apps/web/src/lib/sessionLogging.ts`
+- API tests: `apps/api/tests/test_cap10_sessions.py`
 
 ---
 
@@ -267,15 +276,15 @@ This is a repo-wide inventory mapping each CAP spec in `docs/CAPS/` to the curre
 
 **What’s working now**
 - `scripts/verify.ps1` runs API lint/format/tests, exports OpenAPI, runs web lint/tests, regenerates api-client.
-- UI contract JSON exists for nav affordances.
+- UI contract JSON exists for nav affordances and is enforced in web tests.
 
 **Primary evidence**
 - Verify script: `scripts/verify.ps1`
 - UI contract: `docs/ui_contract.json`
+- Contract enforcement test: `apps/web/src/App.test.tsx`
 - OpenAPI export script: `apps/api/scripts/export_openapi.py`
 
 **Not yet / gaps vs full CAP**
-- A dedicated UI contract verifier script (the contract exists, but verification is not yet enforced in `verify.ps1`).
 - Automated “smoke workflow” suite (CAP-12 S01–S10) beyond unit tests.
 
 ---
@@ -322,12 +331,24 @@ This is a repo-wide inventory mapping each CAP spec in `docs/CAPS/` to the curre
 
 **What’s working now**
 - A MAST-focused slice of name resolution and query building exists inside the Library UI.
-- Name lookup is explicit and does not silently pick a target.
+- CAP-15 guardrails for target resolution in the MAST flow:
+  - Coordinate input detection (RA/Dec degrees) bypasses name lookup.
+  - Name lookup results are cached locally and can be used as an offline fallback.
+  - Ambiguous name lookups require an explicit user pick (no silent “first result” selection).
+- Global search bar MVP in the top navigation:
+  - Quick navigation to core pages.
+  - Searches cached local datasets by name/id (offline/test-safe).
+- Global search → MAST handoff (CAP-15 bridge):
+  - Target actions in the global search can populate the Library MAST query builder via URL params.
+  - The MAST search can auto-run once per token (`mastToken`) to avoid repeated triggering.
 
 **Primary evidence**
 - MAST name lookup endpoint: `apps/api/app/telescope_mast.py`
 - MAST client: `apps/api/app/mast_client.py`
 - Web query builder (MAST-only): `apps/web/src/pages/LibraryPage.tsx`
+- Target resolution helper: `apps/web/src/lib/targetResolution.ts`
+- Global search bar: `apps/web/src/App.tsx`
+- Dataset cache helper: `apps/web/src/lib/datasetCache.ts`
 
 **Not yet / gaps vs full CAP**
 - Global search bar with multi-entity results (targets/molecules/instruments/local datasets).

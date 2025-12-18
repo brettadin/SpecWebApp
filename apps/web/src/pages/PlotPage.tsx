@@ -22,7 +22,11 @@ import {
 } from '../lib/transforms'
 
 import { detectFeatures, type DetectedFeature, type FeatureMode } from '../lib/featureDetection'
+import { notifyDatasetsChanged } from '../lib/appEvents'
+import { logSessionEvent, postSessionEvent } from '../lib/sessionLogging'
+import { buildPlotSnapshotV1, coercePlotSnapshotV1, type PlotSnapshotV1 } from '../lib/plotSnapshot'
 import { usePanelSlots } from '../layout/panelSlotsContext'
+import { useLocation } from 'react-router-dom'
 
 const PlotComponent: React.ComponentType<PlotParams> =
   ((PlotlyModule as unknown as { default?: React.ComponentType<PlotParams> }).default ??
@@ -190,6 +194,7 @@ function sanitizeFilename(name: string) {
 }
 
 export function PlotPage() {
+  const location = useLocation()
   const panelSlots = usePanelSlots()
   const rightSlot = panelSlots?.rightSlot ?? null
   const [busy, setBusy] = useState(false)
@@ -298,6 +303,13 @@ export function PlotPage() {
   const [exportError, setExportError] = useState<string | null>(null)
   const [plotlyRelayout, setPlotlyRelayout] = useState<Record<string, unknown> | null>(null)
 
+  const restoreParams = useMemo(() => {
+    const p = new URLSearchParams(location.search)
+    const sessionId = (p.get('restoreSession') ?? '').trim()
+    const eventId = (p.get('restoreEvent') ?? '').trim()
+    return sessionId && eventId ? { sessionId, eventId } : null
+  }, [location.search])
+
   const visibleDatasetIds = useMemo(
     () => traceStates.filter((t) => t.visible).map((t) => t.datasetId),
     [traceStates],
@@ -387,6 +399,184 @@ export function PlotPage() {
     },
     [annotationsByDatasetId],
   )
+
+  const buildSnapshotPayload = useCallback((): PlotSnapshotV1 => {
+    return buildPlotSnapshotV1({
+      state: {
+        traceStates,
+        derivedTraces,
+        displayXUnit,
+        showAnnotations,
+        filter,
+        plotlyRelayout,
+
+        selectedTransformDatasetIds,
+        normMode,
+        normRangeX0,
+        normRangeX1,
+        baselineMode,
+        baselineOrder,
+        includeBaselineTrace,
+        smoothingMode,
+        savgolWindow,
+        savgolPolyorder,
+
+        diffA,
+        diffB,
+        diffLockA,
+        diffLockB,
+        diffOp,
+        diffAlignmentEnabled,
+        diffAlignmentMethod,
+        diffTargetGrid,
+        diffRatioHandling,
+        diffTau,
+      },
+    })
+  }, [
+    baselineMode,
+    baselineOrder,
+    derivedTraces,
+    diffA,
+    diffAlignmentEnabled,
+    diffAlignmentMethod,
+    diffB,
+    diffLockA,
+    diffLockB,
+    diffOp,
+    diffRatioHandling,
+    diffTargetGrid,
+    diffTau,
+    displayXUnit,
+    filter,
+    includeBaselineTrace,
+    normMode,
+    normRangeX0,
+    normRangeX1,
+    plotlyRelayout,
+    savgolPolyorder,
+    savgolWindow,
+    selectedTransformDatasetIds,
+    showAnnotations,
+    smoothingMode,
+    traceStates,
+  ])
+
+  useEffect(() => {
+    function onSaveSnapshot(e: Event) {
+      const ev = e as CustomEvent<{ sessionId?: string; requestId?: string }>
+      const sessionId = (ev.detail?.sessionId ?? '').trim()
+      const requestId = (ev.detail?.requestId ?? '').trim()
+      if (!sessionId || !requestId) return
+
+      try {
+        const payload = buildSnapshotPayload()
+        try {
+          localStorage.setItem('session.plotSnapshotDraft.v1', JSON.stringify(payload))
+        } catch {
+          // best-effort
+        }
+
+        void postSessionEvent(sessionId, {
+          type: 'snapshot',
+          message: 'Plot snapshot',
+          payload: payload as unknown as Record<string, unknown>,
+        }).then(() => {
+          window.dispatchEvent(new CustomEvent('spectra:plot-snapshot-saved', { detail: { requestId, ok: true } }))
+        })
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        window.dispatchEvent(
+          new CustomEvent('spectra:plot-snapshot-saved', { detail: { requestId, ok: false, error: msg } }),
+        )
+      }
+    }
+
+    window.addEventListener('spectra:save-plot-snapshot', onSaveSnapshot)
+    return () => window.removeEventListener('spectra:save-plot-snapshot', onSaveSnapshot)
+  }, [buildSnapshotPayload])
+
+  useEffect(() => {
+    if (!restoreParams) return
+    let cancelled = false
+
+    async function restore() {
+      setError(null)
+      setWarning(null)
+      try {
+        const res = await fetch(`${API_BASE}/sessions/${encodeURIComponent(restoreParams.sessionId)}`)
+        if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`)
+        const json = (await res.json()) as { events?: Array<{ id: string; type: string; payload?: unknown }> }
+        const ev = (json.events ?? []).find((x) => x.id === restoreParams.eventId)
+        const snap = coercePlotSnapshotV1(ev?.payload)
+        if (!snap) throw new Error('Snapshot payload is missing or unrecognized.')
+        if (cancelled) return
+
+        const nextVisible = new Set(snap.state.traceStates.filter((t) => t.visible).map((t) => t.datasetId))
+
+        setTraceStates((prev) => {
+          const byId = new Map(prev.map((t) => [t.datasetId, t]))
+          for (const t of snap.state.traceStates) {
+            byId.set(t.datasetId, { datasetId: t.datasetId, visible: Boolean(t.visible) })
+          }
+          return Array.from(byId.values())
+        })
+        setDerivedTraces(snap.state.derivedTraces)
+        setDisplayXUnit(snap.state.displayXUnit)
+        setShowAnnotations(snap.state.showAnnotations)
+        setFilter(snap.state.filter)
+        setPlotlyRelayout(snap.state.plotlyRelayout)
+
+        setSelectedTransformDatasetIds(snap.state.selectedTransformDatasetIds)
+        setNormMode(snap.state.normMode)
+        setNormRangeX0(snap.state.normRangeX0)
+        setNormRangeX1(snap.state.normRangeX1)
+        setBaselineMode(snap.state.baselineMode)
+        setBaselineOrder(snap.state.baselineOrder)
+        setIncludeBaselineTrace(snap.state.includeBaselineTrace)
+        setSmoothingMode(snap.state.smoothingMode)
+        setSavgolWindow(snap.state.savgolWindow)
+        setSavgolPolyorder(snap.state.savgolPolyorder)
+
+        setDiffA(snap.state.diffA)
+        setDiffB(snap.state.diffB)
+        setDiffLockA(snap.state.diffLockA)
+        setDiffLockB(snap.state.diffLockB)
+        setDiffOp(snap.state.diffOp)
+        setDiffAlignmentEnabled(snap.state.diffAlignmentEnabled)
+        setDiffAlignmentMethod(snap.state.diffAlignmentMethod)
+        setDiffTargetGrid(snap.state.diffTargetGrid)
+        setDiffRatioHandling(snap.state.diffRatioHandling)
+        setDiffTau(snap.state.diffTau)
+
+        async function loadSeriesOnce(datasetId: string) {
+          if (seriesById[datasetId]) return
+          const resp = await fetch(`${API_BASE}/datasets/${encodeURIComponent(datasetId)}/data`)
+          if (!resp.ok) throw new Error((await resp.text()) || `HTTP ${resp.status}`)
+          const s = (await resp.json()) as DatasetSeries
+          setSeriesById((prev) => ({ ...prev, [datasetId]: s }))
+        }
+
+        await Promise.all(Array.from(nextVisible).map((id) => loadSeriesOnce(id)))
+        if (snap.state.showAnnotations) {
+          await Promise.all(Array.from(nextVisible).map((id) => ensureAnnotationsLoaded(id)))
+        }
+
+        void logSessionEvent({
+          type: 'snapshot.restore',
+          message: 'Restored plot snapshot',
+          payload: { session_id: restoreParams.sessionId, event_id: restoreParams.eventId },
+        })
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : String(e))
+      }
+    }
+
+    void restore()
+    return () => {
+      cancelled = true
+    }
+  }, [ensureAnnotationsLoaded, restoreParams, seriesById])
 
   async function onToggleDataset(datasetId: string, nextVisible: boolean) {
     setError(null)
@@ -887,6 +1077,23 @@ export function PlotPage() {
       }
 
       setDerivedTraces((prev) => [...prev, ...next])
+
+      void logSessionEvent({
+        type: 'transforms.apply',
+        message: `Applied transforms to ${selectedTransformDatasetIds.length} dataset(s)`,
+        payload: {
+          dataset_ids: selectedTransformDatasetIds,
+          baseline: baselineMode === 'poly' ? { mode: 'poly', order: Number(baselineOrder) } : { mode: baselineMode },
+          normalize: {
+            mode: normMode,
+            selection,
+          },
+          smoothing: smoothingMode === 'savgol'
+            ? { mode: 'savgol', window_length: Number(savgolWindow), polyorder: Number(savgolPolyorder) }
+            : { mode: smoothingMode },
+          include_baseline_trace: includeBaselineTrace,
+        },
+      })
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
@@ -905,6 +1112,16 @@ export function PlotPage() {
         })
         if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`)
       }
+
+      notifyDatasetsChanged()
+      void logSessionEvent({
+        type: 'derived.save',
+        message: `Saved ${derivedTraces.length} derived trace(s) to Library`,
+        payload: {
+          count: derivedTraces.length,
+          parent_dataset_ids: Array.from(new Set(derivedTraces.map((t) => t.parentDatasetId))).filter(Boolean),
+        },
+      })
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
@@ -942,6 +1159,12 @@ export function PlotPage() {
       setNewPointY('')
       setNewPointText('')
       setShowAnnotations(true)
+
+      void logSessionEvent({
+        type: 'annotation.add_point',
+        message: `Added point annotation`,
+        payload: { dataset_id: newAnnotationDatasetId, x, y: body.y ?? null, text: body.text },
+      })
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
@@ -969,6 +1192,12 @@ export function PlotPage() {
       setNewRangeX1('')
       setNewRangeText('')
       setShowAnnotations(true)
+
+      void logSessionEvent({
+        type: 'annotation.add_range_x',
+        message: `Added X-range highlight`,
+        payload: { dataset_id: newAnnotationDatasetId, x0, x1, text: newRangeText.trim() },
+      })
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
@@ -983,6 +1212,12 @@ export function PlotPage() {
       )
       if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`)
       await refreshAnnotations(datasetId)
+
+      void logSessionEvent({
+        type: 'annotation.delete',
+        message: `Deleted annotation`,
+        payload: { dataset_id: datasetId, annotation_id: annotationId },
+      })
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
@@ -1149,6 +1384,18 @@ export function PlotPage() {
       setFeatureResults(out)
       setMatchResults([])
       setMatchError(null)
+
+      void logSessionEvent({
+        type: 'features.detect',
+        message: `Detected ${out.length} feature(s)`,
+        payload: {
+          count: out.length,
+          trace_keys: featureTraceKeys,
+          parameters: { mode: featureMode, min_prominence: minProm, min_separation_x: minSep },
+          x_unit_display: xUnitDisplay,
+        },
+      })
+
       if (out.length > 250) {
         setFeatureError('Too many features detected; increase prominence or minimum separation.')
       } else if (!out.length) {
@@ -1168,6 +1415,7 @@ export function PlotPage() {
     setFeatureError(null)
     try {
       const selected = featureResults.filter((f) => selectedFeatureIds.includes(featureRowId(f)))
+      let converted = 0
       for (const f of selected) {
         const datasetId = f.dataset_id_for_annotation
         if (!datasetId) continue
@@ -1190,9 +1438,20 @@ export function PlotPage() {
         })
         if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`)
         await refreshAnnotations(datasetId)
+        converted += 1
       }
 
       setShowAnnotations(true)
+
+      void logSessionEvent({
+        type: 'features.convert_to_annotations',
+        message: `Converted ${converted} feature(s) to annotations`,
+        payload: {
+          converted_count: converted,
+          selected_count: selected.length,
+          trace_keys: Array.from(new Set(selected.map((f) => f.trace_key))),
+        },
+      })
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
@@ -1591,6 +1850,17 @@ export function PlotPage() {
       })
       if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`)
 
+      void logSessionEvent({
+        type: 'export.what_i_see',
+        message: `Exported what I see`,
+        payload: {
+          export_name: payload.export_name,
+          trace_count: traces.length,
+          visible_dataset_ids: visibleDatasetIds,
+          visible_derived_trace_ids: derivedTraces.filter((t) => t.visible).map((t) => t.traceId),
+        },
+      })
+
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -1730,6 +2000,12 @@ export function PlotPage() {
           trust: { interpolated: isInterpolated },
         },
       ])
+
+      void logSessionEvent({
+        type: 'differential.compute',
+        message: `Computed ${opLabel}: ${aAlias} vs ${bAlias}`,
+        payload: { op: diffOp, a: { id: a.id, name: a.name }, b: { id: b.id, name: b.name }, interpolated: isInterpolated },
+      })
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }

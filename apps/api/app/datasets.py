@@ -64,6 +64,12 @@ class IngestCommitResponse(BaseModel):
     dataset: DatasetDetail
 
 
+class DatasetMetadataPatch(BaseModel):
+    name: str | None = None
+    x_unit: str | None = None
+    y_unit: str | None = None
+
+
 def sha256_bytes(raw: bytes) -> str:
     return hashlib.sha256(raw).hexdigest()
 
@@ -114,10 +120,13 @@ def save_dataset(
     datasets_root().mkdir(parents=True, exist_ok=True)
 
     dataset_id = str(uuid.uuid4())
-    created_at = datetime.now(tz=UTC).isoformat()
+    created_at = str(parsed.get("created_at") or "").strip() or datetime.now(tz=UTC).isoformat()
     sha = sha256_bytes(raw)
 
     # Ensure persisted metadata matches the stored raw bytes.
+    parsed["created_at"] = created_at
+    parsed["name"] = name
+    parsed["source_file_name"] = source_file_name
     parsed["sha256"] = sha
 
     ds_dir = datasets_root() / dataset_id
@@ -209,3 +218,38 @@ def get_dataset_xy(dataset_id: str) -> dict:
         "source_metadata": meta.get("source_metadata"),
         "source_preamble": meta.get("source_preamble"),
     }
+
+
+def patch_dataset_metadata(dataset_id: str, patch: DatasetMetadataPatch) -> DatasetDetail:
+    ds_dir = datasets_root() / dataset_id
+    meta_path = ds_dir / "dataset.json"
+    if not meta_path.exists():
+        raise FileNotFoundError(dataset_id)
+
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    changed = False
+
+    if patch.name is not None:
+        next_name = patch.name.strip()
+        if not next_name:
+            raise ValueError("Dataset name cannot be empty.")
+        if meta.get("name") != next_name:
+            meta["name"] = next_name
+            changed = True
+
+    if patch.x_unit is not None:
+        next_x_unit = patch.x_unit.strip() or None
+        if meta.get("x_unit") != next_x_unit:
+            meta["x_unit"] = next_x_unit
+            changed = True
+
+    if patch.y_unit is not None:
+        next_y_unit = patch.y_unit.strip() or None
+        if meta.get("y_unit") != next_y_unit:
+            meta["y_unit"] = next_y_unit
+            changed = True
+
+    if changed:
+        _write_json(meta_path, meta)
+
+    return get_dataset_detail(dataset_id)
