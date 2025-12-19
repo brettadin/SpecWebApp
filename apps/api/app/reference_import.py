@@ -11,7 +11,15 @@ from typing import Literal
 
 from pydantic import BaseModel, HttpUrl
 
-from .datasets import DatasetDetail, save_dataset, sha256_bytes
+from .datasets import (
+    DatasetDetail,
+    DuplicateDatasetError,
+    append_audit_event,
+    find_dataset_ids_by_sha256,
+    get_dataset_detail,
+    save_dataset,
+    sha256_bytes,
+)
 from .ingest_preview import ParsedDataset
 from .jcamp_dx import parse_jcamp_dx
 
@@ -60,6 +68,9 @@ class ReferenceImportJCAMPRequest(BaseModel):
     x_unit: str | None = None
     y_unit: str | None = None
 
+    # CAP-02: duplicate handling for identical raw bytes
+    on_duplicate: Literal["prompt", "open_existing", "keep_both"] = "prompt"
+
 
 class ReferenceImportLineListCSVRequest(BaseModel):
     title: str
@@ -81,6 +92,9 @@ class ReferenceImportLineListCSVRequest(BaseModel):
     x_index: int = 0
     strength_index: int | None = 1
 
+    # CAP-02: duplicate handling for identical raw bytes
+    on_duplicate: Literal["prompt", "open_existing", "keep_both"] = "prompt"
+
 
 class ReferenceImportNistASDLineListRequest(BaseModel):
     species: str
@@ -97,6 +111,9 @@ class ReferenceImportNistASDLineListRequest(BaseModel):
     # Optional provenance overrides
     retrieved_at: str | None = None
     license: ReferenceLicense = ReferenceLicense()
+
+    # CAP-02: duplicate handling for identical raw bytes
+    on_duplicate: Literal["prompt", "open_existing", "keep_both"] = "prompt"
 
 
 def _guess_filename_from_url(url: str) -> str:
@@ -153,6 +170,15 @@ def import_reference_jcamp_dx(req: ReferenceImportJCAMPRequest) -> DatasetDetail
         raise ValueError("Empty payload fetched from source_url")
 
     sha = sha256_bytes(raw)
+
+    existing_ids = find_dataset_ids_by_sha256(sha)
+    if existing_ids:
+        existing_id = existing_ids[0]
+        if req.on_duplicate == "open_existing":
+            return get_dataset_detail(existing_id)
+        if req.on_duplicate != "keep_both":
+            raise DuplicateDatasetError(sha256=sha, existing_dataset_id=existing_id)
+
     text = _decode_text_best_effort(raw)
     parsed_jc = parse_jcamp_dx(text)
 
@@ -197,12 +223,25 @@ def import_reference_jcamp_dx(req: ReferenceImportJCAMPRequest) -> DatasetDetail
         "raw_sha256": sha,
     }
 
-    return save_dataset(
+    detail = save_dataset(
         name=req.title.strip(),
         source_file_name=_guess_filename_from_url(str(req.source_url)),
         raw=raw,
         parsed=parsed,
     )
+
+    if existing_ids and req.on_duplicate == "keep_both":
+        append_audit_event(
+            detail.id,
+            "dataset.duplicate_kept",
+            {
+                "sha256": sha,
+                "duplicate_of_dataset_id": existing_ids[0],
+                "context": "reference-jcamp-dx",
+            },
+        )
+
+    return detail
 
 
 def _parse_line_list_csv(
@@ -278,6 +317,15 @@ def import_reference_line_list_csv(req: ReferenceImportLineListCSVRequest) -> Da
         raise ValueError("Empty payload fetched from source_url")
 
     sha = sha256_bytes(raw)
+
+    existing_ids = find_dataset_ids_by_sha256(sha)
+    if existing_ids:
+        existing_id = existing_ids[0]
+        if req.on_duplicate == "open_existing":
+            return get_dataset_detail(existing_id)
+        if req.on_duplicate != "keep_both":
+            raise DuplicateDatasetError(sha256=sha, existing_dataset_id=existing_id)
+
     text = _decode_text_best_effort(raw)
 
     x, y = _parse_line_list_csv(
@@ -334,12 +382,25 @@ def import_reference_line_list_csv(req: ReferenceImportLineListCSVRequest) -> Da
         "raw_sha256": sha,
     }
 
-    return save_dataset(
+    detail = save_dataset(
         name=req.title.strip(),
         source_file_name=_guess_filename_from_url(str(req.source_url)),
         raw=raw,
         parsed=parsed,
     )
+
+    if existing_ids and req.on_duplicate == "keep_both":
+        append_audit_event(
+            detail.id,
+            "dataset.duplicate_kept",
+            {
+                "sha256": sha,
+                "duplicate_of_dataset_id": existing_ids[0],
+                "context": "reference-line-list-csv",
+            },
+        )
+
+    return detail
 
 
 def _parse_nist_asd_tab_delimited(text: str) -> tuple[list[float], list[float]]:
@@ -420,6 +481,15 @@ def import_reference_nist_asd_line_list(
         raise ValueError("Empty payload fetched from NIST ASD")
 
     sha = sha256_bytes(raw)
+
+    existing_ids = find_dataset_ids_by_sha256(sha)
+    if existing_ids:
+        existing_id = existing_ids[0]
+        if req.on_duplicate == "open_existing":
+            return get_dataset_detail(existing_id)
+        if req.on_duplicate != "keep_both":
+            raise DuplicateDatasetError(sha256=sha, existing_dataset_id=existing_id)
+
     text = _decode_text_best_effort(raw)
 
     # NIST returns HTML with an embedded error message if params are invalid.
@@ -483,9 +553,22 @@ def import_reference_nist_asd_line_list(
         "raw_sha256": sha,
     }
 
-    return save_dataset(
+    detail = save_dataset(
         name=title,
         source_file_name="nist-asd:lines1.pl",
         raw=raw,
         parsed=parsed,
     )
+
+    if existing_ids and req.on_duplicate == "keep_both":
+        append_audit_event(
+            detail.id,
+            "dataset.duplicate_kept",
+            {
+                "sha256": sha,
+                "duplicate_of_dataset_id": existing_ids[0],
+                "context": "reference-nist-asd-line-list",
+            },
+        )
+
+    return detail

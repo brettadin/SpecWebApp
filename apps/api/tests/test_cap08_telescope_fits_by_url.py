@@ -116,5 +116,63 @@ def test_cap08_preview_and_import_fits_by_url(tmp_path, monkeypatch):
         detail = ds.json()
         assert detail.get("reference", {}).get("source_name") == "MAST"
         assert detail.get("reference", {}).get("citation_present") is True
+
+        dup = client.post(
+            "/telescope/import/fits-by-url",
+            json={
+                "title": "JWST Example Spectrum",
+                "source_url": url,
+                "mission": "JWST",
+                "source_name": "MAST",
+                "citation_text": "MAST (example), retrieved for testing",
+                "hdu_index": cand["hdu_index"],
+                "x_index": cand.get("suggested_x_index") or 0,
+                "y_index": cand.get("suggested_y_index") or 1,
+                "x_unit": "um",
+                "y_unit": "Jy",
+            },
+        )
+        assert dup.status_code == 409, dup.text
+        detail = dup.json().get("detail", {})
+        assert detail.get("code") == "duplicate_sha256"
+        assert detail.get("existing_dataset", {}).get("id") == ds_id
+
+        opened = client.post(
+            "/telescope/import/fits-by-url",
+            json={
+                "title": "JWST Example Spectrum",
+                "source_url": url,
+                "mission": "JWST",
+                "source_name": "MAST",
+                "citation_text": "MAST (example), retrieved for testing",
+                "hdu_index": cand["hdu_index"],
+                "x_index": cand.get("suggested_x_index") or 0,
+                "y_index": cand.get("suggested_y_index") or 1,
+                "x_unit": "um",
+                "y_unit": "Jy",
+                "on_duplicate": "open_existing",
+            },
+        )
+        assert opened.status_code == 200, opened.text
+        assert opened.json().get("id") == ds_id
+
+        kept = client.post(
+            "/telescope/import/fits-by-url",
+            json={
+                "title": "JWST Example Spectrum",
+                "source_url": url,
+                "mission": "JWST",
+                "source_name": "MAST",
+                "citation_text": "MAST (example), retrieved for testing",
+                "hdu_index": cand["hdu_index"],
+                "x_index": cand.get("suggested_x_index") or 0,
+                "y_index": cand.get("suggested_y_index") or 1,
+                "x_unit": "um",
+                "y_unit": "Jy",
+                "on_duplicate": "keep_both",
+            },
+        )
+        assert kept.status_code == 200, kept.text
+        assert kept.json().get("id") != ds_id
     finally:
         httpd.shutdown()

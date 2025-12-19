@@ -4,6 +4,23 @@
  */
 
 export interface paths {
+    "/collections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Collections List */
+        get: operations["collections_list_collections_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/datasets": {
         parameters: {
             query?: never;
@@ -103,6 +120,23 @@ export interface paths {
         post?: never;
         /** Annotations Delete */
         delete: operations["annotations_delete_datasets__dataset_id__annotations__annotation_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/datasets/{dataset_id}/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Datasets Get Audit */
+        get: operations["datasets_get_audit_datasets__dataset_id__audit_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -330,6 +364,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/tags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Tags List */
+        get: operations["tags_list_tags_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/telescope/import/fits-by-url": {
         parameters: {
             query?: never;
@@ -516,6 +567,19 @@ export interface components {
             /** Y1 */
             y1?: number | null;
         };
+        /** AuditEvent */
+        AuditEvent: {
+            /** Action */
+            action: string;
+            /** Details */
+            details?: {
+                [key: string]: unknown;
+            };
+            /** Event Id */
+            event_id: string;
+            /** Timestamp */
+            timestamp: string;
+        };
         /** Body_ingest_commit_ingest_commit_post */
         Body_ingest_commit_ingest_commit_post: {
             /**
@@ -530,6 +594,11 @@ export interface components {
              * @default
              */
             name: string;
+            /**
+             * On Duplicate
+             * @default prompt
+             */
+            on_duplicate: string;
             /** X Index */
             x_index?: number | null;
             /**
@@ -566,8 +635,17 @@ export interface components {
         };
         /** DatasetDetail */
         DatasetDetail: {
+            /** Collections */
+            collections?: string[];
             /** Created At */
             created_at: string;
+            /** Description */
+            description?: string | null;
+            /**
+             * Favorite
+             * @default false
+             */
+            favorite: boolean;
             /** Id */
             id: string;
             /** Name */
@@ -577,6 +655,10 @@ export interface components {
             sha256: string;
             /** Source File Name */
             source_file_name: string;
+            /** Source Type */
+            source_type?: string | null;
+            /** Tags */
+            tags?: string[];
             /** Warnings */
             warnings: string[];
             /** X Count */
@@ -588,8 +670,18 @@ export interface components {
         };
         /** DatasetMetadataPatch */
         DatasetMetadataPatch: {
+            /** Collections */
+            collections?: string[] | null;
+            /** Description */
+            description?: string | null;
+            /** Favorite */
+            favorite?: boolean | null;
             /** Name */
             name?: string | null;
+            /** Source Type */
+            source_type?: string | null;
+            /** Tags */
+            tags?: string[] | null;
             /** X Unit */
             x_unit?: string | null;
             /** Y Unit */
@@ -597,8 +689,17 @@ export interface components {
         };
         /** DatasetSummary */
         DatasetSummary: {
+            /** Collections */
+            collections?: string[];
             /** Created At */
             created_at: string;
+            /** Description */
+            description?: string | null;
+            /**
+             * Favorite
+             * @default false
+             */
+            favorite: boolean;
             /** Id */
             id: string;
             /** Name */
@@ -608,6 +709,10 @@ export interface components {
             sha256: string;
             /** Source File Name */
             source_file_name: string;
+            /** Source Type */
+            source_type?: string | null;
+            /** Tags */
+            tags?: string[];
         };
         /** DerivedDatasetCreate */
         DerivedDatasetCreate: {
@@ -742,6 +847,12 @@ export interface components {
              */
             license: components["schemas"]["ReferenceLicense"];
             /**
+             * On Duplicate
+             * @default prompt
+             * @enum {string}
+             */
+            on_duplicate: "prompt" | "open_existing" | "keep_both";
+            /**
              * Query
              * @default {}
              */
@@ -803,6 +914,12 @@ export interface components {
              */
             license: components["schemas"]["ReferenceLicense"];
             /**
+             * On Duplicate
+             * @default prompt
+             * @enum {string}
+             */
+            on_duplicate: "prompt" | "open_existing" | "keep_both";
+            /**
              * Query
              * @default {}
              */
@@ -855,6 +972,12 @@ export interface components {
              *     }
              */
             license: components["schemas"]["ReferenceLicense"];
+            /**
+             * On Duplicate
+             * @default prompt
+             * @enum {string}
+             */
+            on_duplicate: "prompt" | "open_existing" | "keep_both";
             /** Retrieved At */
             retrieved_at?: string | null;
             /** Species */
@@ -981,6 +1104,12 @@ export interface components {
              * @enum {string}
              */
             mission: "JWST" | "HST" | "HLSP" | "Other";
+            /**
+             * On Duplicate
+             * @default prompt
+             * @enum {string}
+             */
+            on_duplicate: "prompt" | "open_existing" | "keep_both";
             /** Product Filename */
             product_filename?: string | null;
             /**
@@ -1030,6 +1159,12 @@ export interface components {
              * @enum {string}
              */
             mission: "JWST" | "HST" | "HLSP" | "Other";
+            /**
+             * On Duplicate
+             * @default prompt
+             * @enum {string}
+             */
+            on_duplicate: "prompt" | "open_existing" | "keep_both";
             /**
              * Query
              * @default {}
@@ -1237,6 +1372,26 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    collections_list_collections_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string[];
+                };
+            };
+        };
+    };
     datasets_list_datasets_get: {
         parameters: {
             query?: never;
@@ -1481,6 +1636,37 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    datasets_get_audit_datasets__dataset_id__audit_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditEvent"][];
                 };
             };
             /** @description Validation Error */
@@ -1931,6 +2117,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    tags_list_tags_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string[];
                 };
             };
         };

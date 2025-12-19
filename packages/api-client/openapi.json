@@ -222,6 +222,34 @@
         "title": "AnnotationUpdate",
         "type": "object"
       },
+      "AuditEvent": {
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "details": {
+            "additionalProperties": true,
+            "title": "Details",
+            "type": "object"
+          },
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "timestamp": {
+            "title": "Timestamp",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_id",
+          "timestamp",
+          "action"
+        ],
+        "title": "AuditEvent",
+        "type": "object"
+      },
       "Body_ingest_commit_ingest_commit_post": {
         "properties": {
           "file": {
@@ -243,6 +271,11 @@
           "name": {
             "default": "",
             "title": "Name",
+            "type": "string"
+          },
+          "on_duplicate": {
+            "default": "prompt",
+            "title": "On Duplicate",
             "type": "string"
           },
           "x_index": {
@@ -328,9 +361,32 @@
       },
       "DatasetDetail": {
         "properties": {
+          "collections": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Collections",
+            "type": "array"
+          },
           "created_at": {
             "title": "Created At",
             "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "favorite": {
+            "default": false,
+            "title": "Favorite",
+            "type": "boolean"
           },
           "id": {
             "title": "Id",
@@ -357,6 +413,24 @@
           "source_file_name": {
             "title": "Source File Name",
             "type": "string"
+          },
+          "source_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Type"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
           },
           "warnings": {
             "items": {
@@ -408,6 +482,42 @@
       },
       "DatasetMetadataPatch": {
         "properties": {
+          "collections": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Collections"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "favorite": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Favorite"
+          },
           "name": {
             "anyOf": [
               {
@@ -418,6 +528,31 @@
               }
             ],
             "title": "Name"
+          },
+          "source_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Type"
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags"
           },
           "x_unit": {
             "anyOf": [
@@ -447,9 +582,32 @@
       },
       "DatasetSummary": {
         "properties": {
+          "collections": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Collections",
+            "type": "array"
+          },
           "created_at": {
             "title": "Created At",
             "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "favorite": {
+            "default": false,
+            "title": "Favorite",
+            "type": "boolean"
           },
           "id": {
             "title": "Id",
@@ -476,6 +634,24 @@
           "source_file_name": {
             "title": "Source File Name",
             "type": "string"
+          },
+          "source_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Type"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
           }
         },
         "required": [
@@ -877,6 +1053,16 @@
               "redistribution_allowed": "unknown"
             }
           },
+          "on_duplicate": {
+            "default": "prompt",
+            "enum": [
+              "prompt",
+              "open_existing",
+              "keep_both"
+            ],
+            "title": "On Duplicate",
+            "type": "string"
+          },
           "query": {
             "additionalProperties": true,
             "default": {},
@@ -1000,6 +1186,16 @@
               "redistribution_allowed": "unknown"
             }
           },
+          "on_duplicate": {
+            "default": "prompt",
+            "enum": [
+              "prompt",
+              "open_existing",
+              "keep_both"
+            ],
+            "title": "On Duplicate",
+            "type": "string"
+          },
           "query": {
             "additionalProperties": true,
             "default": {},
@@ -1112,6 +1308,16 @@
             "default": {
               "redistribution_allowed": "unknown"
             }
+          },
+          "on_duplicate": {
+            "default": "prompt",
+            "enum": [
+              "prompt",
+              "open_existing",
+              "keep_both"
+            ],
+            "title": "On Duplicate",
+            "type": "string"
           },
           "retrieved_at": {
             "anyOf": [
@@ -1519,6 +1725,16 @@
             "title": "Mission",
             "type": "string"
           },
+          "on_duplicate": {
+            "default": "prompt",
+            "enum": [
+              "prompt",
+              "open_existing",
+              "keep_both"
+            ],
+            "title": "On Duplicate",
+            "type": "string"
+          },
           "product_filename": {
             "anyOf": [
               {
@@ -1627,6 +1843,16 @@
               "Other"
             ],
             "title": "Mission",
+            "type": "string"
+          },
+          "on_duplicate": {
+            "default": "prompt",
+            "enum": [
+              "prompt",
+              "open_existing",
+              "keep_both"
+            ],
+            "title": "On Duplicate",
             "type": "string"
           },
           "query": {
@@ -2168,6 +2394,28 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/collections": {
+      "get": {
+        "operationId": "collections_list_collections_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "title": "Response Collections List Collections Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Collections List"
+      }
+    },
     "/datasets": {
       "get": {
         "operationId": "datasets_list_datasets_get",
@@ -2521,6 +2769,49 @@
           }
         },
         "summary": "Annotations Update"
+      }
+    },
+    "/datasets/{dataset_id}/audit": {
+      "get": {
+        "operationId": "datasets_get_audit_datasets__dataset_id__audit_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_id",
+            "required": true,
+            "schema": {
+              "title": "Dataset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AuditEvent"
+                  },
+                  "title": "Response Datasets Get Audit Datasets  Dataset Id  Audit Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Datasets Get Audit"
       }
     },
     "/datasets/{dataset_id}/data": {
@@ -3068,6 +3359,28 @@
           }
         },
         "summary": "Post Session Event"
+      }
+    },
+    "/tags": {
+      "get": {
+        "operationId": "tags_list_tags_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "title": "Response Tags List Tags Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Tags List"
       }
     },
     "/telescope/import/fits-by-url": {

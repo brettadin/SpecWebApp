@@ -15,7 +15,7 @@ This is a repo-wide inventory mapping each CAP spec in `docs/CAPS/` to the curre
 | CAP | Title (short) | Status |
 | --- | --- | --- |
 | CAP-01 | Dataset ingestion + parsing | Implemented (core) |
-| CAP-02 | Dataset library + metadata + sharing | In progress |
+| CAP-02 | Dataset library + metadata + sharing | Implemented (core/MVP) |
 | CAP-03 | Plot overlays + trace management | Implemented (core) |
 | CAP-04 | Notes/labels + region highlights | Implemented (core) |
 | CAP-05 | Normalization + unit display + transforms | Implemented (core) |
@@ -53,27 +53,41 @@ This is a repo-wide inventory mapping each CAP spec in `docs/CAPS/` to the curre
 
 **Not yet / gaps vs full CAP**
 - Broad acceptance test matrix (many formats/instruments) is not formalized as a suite.
-- No checksum-based dedupe or conflict UX (beyond SHA storage).
 - No dedicated UI for “ingest decisions” beyond what preview returns.
 
 ---
 
 ## CAP-02 — Dataset library, metadata, and sharing
 
-**Status:** In progress
+**Status:** Implemented (core/MVP)
+
+**MVP closeout note**
+- This CAP is considered “core/MVP implemented” as a local-first library: metadata editing, basic organization (collections/tags/favorites), duplicate prompting (no silent overwrites/duplicates), and an audit trail.
+- Full multi-user sharing/permissions/workspaces are explicitly deferred (tracked under “Not yet / gaps vs full CAP”).
 
 **What’s working now**
 - Local-first dataset storage (raw bytes + `dataset.json`) with listing + detail APIs.
-- Dataset metadata editing (rename + X/Y units) via `PATCH /datasets/{dataset_id}` and a lightweight inline editor in the Library dataset list.
+- Dataset metadata editing (rename + X/Y units + description + tags + favorite) via `PATCH /datasets/{dataset_id}` and the Library dataset editor.
+- Collections/folders metadata (`collections`) with Library editing + filtering.
+- Duplicate detection (content hash / SHA-256) with explicit choice (use existing vs keep both) across:
+  - local ingest (`POST /ingest/commit`)
+  - reference imports (CAP-07)
+  - telescope imports (CAP-08)
+- Minimal local-first audit trail per dataset (`GET /datasets/{dataset_id}/audit`).
+- Tag aggregation endpoint for simple filtering UX (`GET /tags`).
 - Minimal “trust-first” reference summary exposed in dataset list (for CAP-07/CAP-08 imports).
 
 **Primary evidence**
 - Dataset storage + list/detail: `apps/api/app/datasets.py`
 - Dataset endpoints: `apps/api/app/main.py`
-- Web listing usage: `apps/web/src/pages/LibraryPage.tsx`, `apps/web/src/pages/PlotPage.tsx`
+- CAP-02 tests: `apps/api/tests/test_cap02_dedup_tags_audit.py`
+- Web Library dataset editor + search: `apps/web/src/pages/LibraryPage.tsx`
+- Change records:
+  - `docs/changes/2025-12-19_cap-02_library_tags_dedupe_audit.md`
+  - `docs/changes/2025-12-19_cap-02_collections_and_dedupe_reference_telescope.md`
 
 **Not yet / gaps vs full CAP**
-- Rich metadata editing UI (tags/collections/notes), search/filter beyond simple text filter in plot view.
+- Rich metadata editing UI (notes), search/filter beyond simple text filter in plot view.
 - Dataset list organization/hygiene UX (e.g., tabs/sections, collapse, “recent vs all”, hide/archive) to avoid scrolling through large libraries.
 - Sharing/permissions/audit trail (CAP-02’s full policy surface).
 - Dedupe rules and explicit dataset versioning semantics.
@@ -171,6 +185,7 @@ This is a repo-wide inventory mapping each CAP spec in `docs/CAPS/` to the curre
   - Line list CSV/tab data (URL-based import)
   - NIST ASD line lists fetched from typed query inputs (no user-supplied URL) and rendered as stick-line overlays in the Plot inspector UI.
 - Reference metadata persisted with datasets (source URL when applicable, retrieved_at, citation, basic license/sharing defaults).
+- CAP-02 duplicate prompting is supported on reference import endpoints (use existing vs keep both).
 
 **Primary evidence**
 - API import endpoints: `apps/api/app/main.py`
@@ -198,6 +213,7 @@ This is a repo-wide inventory mapping each CAP spec in `docs/CAPS/` to the curre
   - Product listing for an observation
 - Download + cache of MAST product bytes (by `dataURI`) and FITS preview/import (table HDU extraction).
 - Citation-first dataset creation for telescope imports (restrictive sharing by default).
+- CAP-02 duplicate prompting is supported on telescope import endpoints (use existing vs keep both).
 
 **Primary evidence**
 - MAST client + caching: `apps/api/app/mast_client.py`

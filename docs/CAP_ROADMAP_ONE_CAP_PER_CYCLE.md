@@ -40,7 +40,7 @@ A CAP can be marked **Implemented (core)** when:
 
 ## CAP-02 — Dataset library, metadata, and sharing
 
-**Current state:** Local-first storage + list/detail exists; rename/units editing exists. Missing tags/collections/search/duplicate-handling/sharing.
+**Current state:** Core/MVP closeout complete (local-first metadata + collections + search/filter, dedupe prompting across import paths, audit trail). Sharing/permissions remain deferred.
 
 **Core closeout scope (recommended)**
 
@@ -54,6 +54,13 @@ A CAP can be marked **Implemented (core)** when:
 **Out of scope for the CAP-02 closeout cycle**
 
 - Multi-user auth, real group sharing/permissions enforcement, public publishing.
+
+**Primary evidence (completed)**
+
+- Change records:
+  - `docs/changes/2025-12-19_cap-02_library_tags_dedupe_audit.md`
+  - `docs/changes/2025-12-19_cap-02_collections_and_dedupe_reference_telescope.md`
+- Inventory status + evidence: `docs/CAP_PROGRESS_INVENTORY.md`
 
 **Acceptance checks to target (from CAP-02 spec)**
 

@@ -94,5 +94,55 @@ def test_cap07_import_reference_jcamp_dx_by_url(tmp_path, monkeypatch):
         assert "NIST Chemistry WebBook" in meta
         assert url in meta
         assert "citation_text" in meta
+
+        # CAP-02: identical bytes should prompt for duplicate handling.
+        dup = client.post(
+            "/references/import/jcamp-dx",
+            json={
+                "title": "NIST WebBook IR (Example)",
+                "source_name": "NIST Chemistry WebBook",
+                "source_url": url,
+                "citation_text": "NIST Chemistry WebBook, retrieved for testing",
+                "license": {"redistribution_allowed": "unknown"},
+                "query": {"note": "unit test"},
+                "trust_tier": "Primary/Authoritative",
+            },
+        )
+        assert dup.status_code == 409, dup.text
+        detail = dup.json().get("detail", {})
+        assert detail.get("code") == "duplicate_sha256"
+        assert detail.get("existing_dataset", {}).get("id") == ds_id
+
+        opened = client.post(
+            "/references/import/jcamp-dx",
+            json={
+                "title": "NIST WebBook IR (Example)",
+                "source_name": "NIST Chemistry WebBook",
+                "source_url": url,
+                "citation_text": "NIST Chemistry WebBook, retrieved for testing",
+                "license": {"redistribution_allowed": "unknown"},
+                "query": {"note": "unit test"},
+                "trust_tier": "Primary/Authoritative",
+                "on_duplicate": "open_existing",
+            },
+        )
+        assert opened.status_code == 200, opened.text
+        assert opened.json().get("id") == ds_id
+
+        kept = client.post(
+            "/references/import/jcamp-dx",
+            json={
+                "title": "NIST WebBook IR (Example)",
+                "source_name": "NIST Chemistry WebBook",
+                "source_url": url,
+                "citation_text": "NIST Chemistry WebBook, retrieved for testing",
+                "license": {"redistribution_allowed": "unknown"},
+                "query": {"note": "unit test"},
+                "trust_tier": "Primary/Authoritative",
+                "on_duplicate": "keep_both",
+            },
+        )
+        assert kept.status_code == 200, kept.text
+        assert kept.json().get("id") != ds_id
     finally:
         httpd.shutdown()

@@ -7,7 +7,15 @@ from typing import Literal
 
 from pydantic import BaseModel, HttpUrl
 
-from .datasets import DatasetDetail, save_dataset, sha256_bytes
+from .datasets import (
+    DatasetDetail,
+    DuplicateDatasetError,
+    append_audit_event,
+    find_dataset_ids_by_sha256,
+    get_dataset_detail,
+    save_dataset,
+    sha256_bytes,
+)
 from .fits_parser import extract_xy, list_table_candidates, suggest_xy_columns
 from .ingest_preview import ParsedDataset
 from .mast_client import mast_cache_info, mast_download_file_with_cache_info
@@ -69,6 +77,9 @@ class TelescopeFITSImportRequest(TelescopeFITSPreviewRequest):
     x_unit: str | None = None
     y_unit: str | None = None
 
+    # CAP-02: duplicate handling for identical raw bytes
+    on_duplicate: Literal["prompt", "open_existing", "keep_both"] = "prompt"
+
 
 class TelescopeFITSPreviewByDataURIRequest(BaseModel):
     data_uri: str
@@ -89,6 +100,9 @@ class TelescopeFITSImportByDataURIRequest(TelescopeFITSPreviewByDataURIRequest):
     y_index: int
     x_unit: str | None = None
     y_unit: str | None = None
+
+    # CAP-02: duplicate handling for identical raw bytes
+    on_duplicate: Literal["prompt", "open_existing", "keep_both"] = "prompt"
 
 
 def _preview_fits_payload(
@@ -172,11 +186,20 @@ def _import_fits_payload(
     y_index: int,
     x_unit: str | None,
     y_unit: str | None,
+    on_duplicate: str,
 ) -> DatasetDetail:
     if not raw:
         raise ValueError("Empty FITS payload")
 
     sha = sha256_bytes(raw)
+
+    existing_ids = find_dataset_ids_by_sha256(sha)
+    if existing_ids:
+        existing_id = existing_ids[0]
+        if on_duplicate == "open_existing":
+            return get_dataset_detail(existing_id)
+        if on_duplicate != "keep_both":
+            raise DuplicateDatasetError(sha256=sha, existing_dataset_id=existing_id)
 
     x, y, decisions = extract_xy(raw, hdu_index, x_index, y_index)
 
@@ -245,12 +268,25 @@ def _import_fits_payload(
         query=query,
     )
 
-    return save_dataset(
+    detail = save_dataset(
         name=title.strip(),
         source_file_name=file_name,
         raw=raw,
         parsed=parsed,
     )
+
+    if existing_ids and on_duplicate == "keep_both":
+        append_audit_event(
+            detail.id,
+            "dataset.duplicate_kept",
+            {
+                "sha256": sha,
+                "duplicate_of_dataset_id": existing_ids[0],
+                "context": "telescope-fits",
+            },
+        )
+
+    return detail
 
 
 def preview_telescope_fits_by_url(req: TelescopeFITSPreviewRequest) -> TelescopeFITSPreviewResponse:
@@ -292,6 +328,7 @@ def import_telescope_fits_by_url(req: TelescopeFITSImportRequest) -> DatasetDeta
         y_index=req.y_index,
         x_unit=req.x_unit,
         y_unit=req.y_unit,
+        on_duplicate=req.on_duplicate,
     )
 
 
@@ -334,4 +371,5 @@ def import_telescope_fits_by_mast_data_uri(
         y_index=req.y_index,
         x_unit=req.x_unit,
         y_unit=req.y_unit,
+        on_duplicate=req.on_duplicate,
     )
