@@ -7,6 +7,7 @@ This folder contains the in-repo documentation used by the in-app Docs hub (CAP-
 - If you’re a contributor/agent: see `docs/README_FOR_AGENTS.md`.
 - If you’re implementing features: start from the CAP specs in `docs/CAPS/`.
 - If you’re changing UI navigation or core screens: keep `docs/ui_contract.json` up to date.
+- For execution planning across CAPs: see `docs/CAP_ROADMAP_ONE_CAP_PER_CYCLE.md`.
 
 ## Docs model (Diátaxis)
 

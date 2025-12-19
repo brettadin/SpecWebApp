@@ -10,6 +10,7 @@ import runbook from '../../../../docs/RUNBOOK.md?raw'
 import troubleshooting from '../../../../docs/TROUBLESHOOTING.md?raw'
 import uiContract from '../../../../docs/UI_CONTRACT.md?raw'
 import capProgressInventory from '../../../../docs/CAP_PROGRESS_INVENTORY.md?raw'
+import capRoadmapOnePerCycle from '../../../../docs/CAP_ROADMAP_ONE_CAP_PER_CYCLE.md?raw'
 import glossary from '../../../../docs/reference/glossary.md?raw'
 import referenceLinks from '../../../../docs/references/REFERENCE_LINKS.md?raw'
 import referencesRaw from '../../../../docs/library/REFERENCES.md?raw'
@@ -44,6 +45,7 @@ export function DocsPage() {
     const baseDocs: DocEntry[] = [
       { id: 'start-index', title: 'Start here', category: 'Start here', content: docsIndex },
       { id: 'cap-progress', title: 'CAP progress inventory', category: 'Start here', content: capProgressInventory },
+      { id: 'cap-roadmap', title: 'CAP roadmap (one per dev cycle)', category: 'Start here', content: capRoadmapOnePerCycle },
       { id: 'agents-readme', title: 'README for agents', category: 'Agents', content: readmeForAgents },
       { id: 'agents-architecture', title: 'Architecture overview', category: 'Agents', content: architectureOverview },
       { id: 'agents-runbook', title: 'Runbook', category: 'Agents', content: runbook },

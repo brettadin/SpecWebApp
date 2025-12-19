@@ -1,6 +1,6 @@
 # CAP Progress Inventory (repo scan)
 
-Date: 2025-12-18
+Date: 2025-12-19
 
 This is a repo-wide inventory mapping each CAP spec in `docs/CAPS/` to the current implementation state in `apps/api`, `apps/web`, tests, and supporting docs.
 
@@ -166,19 +166,23 @@ This is a repo-wide inventory mapping each CAP spec in `docs/CAPS/` to the curre
 **Status:** In progress
 
 **What’s working now**
-- Citation-first reference imports by URL:
-  - JCAMP-DX reference spectra
-  - Line list CSV/tab data
-- Reference metadata persisted with datasets (source URL, retrieved_at, citation, basic license/sharing defaults).
+- Citation-first reference imports:
+  - JCAMP-DX reference spectra (URL-based import)
+  - Line list CSV/tab data (URL-based import)
+  - NIST ASD line lists fetched from typed query inputs (no user-supplied URL) and rendered as stick-line overlays in the Plot inspector UI.
+- Reference metadata persisted with datasets (source URL when applicable, retrieved_at, citation, basic license/sharing defaults).
 
 **Primary evidence**
 - API import endpoints: `apps/api/app/main.py`
 - Reference import implementation: `apps/api/app/reference_import.py`
+- NIST ASD import endpoint: `POST /references/import/nist-asd-line-list` in `apps/api/app/main.py`
 - Web UI for reference imports: `apps/web/src/pages/LibraryPage.tsx`
+- Web UI for typed NIST ASD fetch + overlay controls: `apps/web/src/pages/PlotPage.tsx`
 - API tests: `apps/api/tests/test_cap07_reference_import_jcamp.py`, `apps/api/tests/test_cap07_reference_import_line_list_csv.py`
 
 **Not yet / gaps vs full CAP**
-- Pluggable connector architecture with “search + import” (NIST/HITRAN/ExoMol, etc.).
+- Pluggable connector architecture with “search + import” (NIST WebBook search, HITRAN/ExoMol, etc.) and a unified “Add Reference Data” panel.
+- Periodic-table + ion-stage selector UX for atomic lines (current NIST ASD flow is typed-query driven).
 - Cache invalidation (“refresh from source”) and richer license gating.
 
 ---
