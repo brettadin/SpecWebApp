@@ -310,6 +310,94 @@ def test_cap08_mast_download_preview_and_import(tmp_path: Path, monkeypatch: Mon
         assert ref_query.get("calib_level") == 3
         assert ref_query.get("product_type") == "science"
         assert ref_query.get("recommended") is True
+
+        dup = client.post(
+            "/telescope/mast/import/fits-by-data-uri",
+            json={
+                "title": "JWST MAST Product Spectrum",
+                "data_uri": _DATA_URI,
+                "product_filename": "example_x1d.fits",
+                "mission": "JWST",
+                "source_name": "MAST",
+                "citation_text": "MAST (example), retrieved for testing",
+                "query": {
+                    "obsid": 123,
+                    "product": "example_x1d.fits",
+                    "product_filename": "example_x1d.fits",
+                    "data_uri": _DATA_URI,
+                    "calib_level": 3,
+                    "product_type": "science",
+                    "recommended": True,
+                },
+                "hdu_index": cand["hdu_index"],
+                "x_index": cand.get("suggested_x_index") or 0,
+                "y_index": cand.get("suggested_y_index") or 1,
+                "x_unit": "um",
+                "y_unit": "Jy",
+            },
+        )
+        assert dup.status_code == 409, dup.text
+        detail = dup.json().get("detail", {})
+        assert detail.get("code") == "duplicate_sha256"
+        assert detail.get("existing_dataset", {}).get("id") == ds_id
+
+        opened = client.post(
+            "/telescope/mast/import/fits-by-data-uri",
+            json={
+                "title": "JWST MAST Product Spectrum",
+                "data_uri": _DATA_URI,
+                "product_filename": "example_x1d.fits",
+                "mission": "JWST",
+                "source_name": "MAST",
+                "citation_text": "MAST (example), retrieved for testing",
+                "query": {
+                    "obsid": 123,
+                    "product": "example_x1d.fits",
+                    "product_filename": "example_x1d.fits",
+                    "data_uri": _DATA_URI,
+                    "calib_level": 3,
+                    "product_type": "science",
+                    "recommended": True,
+                },
+                "hdu_index": cand["hdu_index"],
+                "x_index": cand.get("suggested_x_index") or 0,
+                "y_index": cand.get("suggested_y_index") or 1,
+                "x_unit": "um",
+                "y_unit": "Jy",
+                "on_duplicate": "open_existing",
+            },
+        )
+        assert opened.status_code == 200, opened.text
+        assert opened.json().get("id") == ds_id
+
+        kept = client.post(
+            "/telescope/mast/import/fits-by-data-uri",
+            json={
+                "title": "JWST MAST Product Spectrum",
+                "data_uri": _DATA_URI,
+                "product_filename": "example_x1d.fits",
+                "mission": "JWST",
+                "source_name": "MAST",
+                "citation_text": "MAST (example), retrieved for testing",
+                "query": {
+                    "obsid": 123,
+                    "product": "example_x1d.fits",
+                    "product_filename": "example_x1d.fits",
+                    "data_uri": _DATA_URI,
+                    "calib_level": 3,
+                    "product_type": "science",
+                    "recommended": True,
+                },
+                "hdu_index": cand["hdu_index"],
+                "x_index": cand.get("suggested_x_index") or 0,
+                "y_index": cand.get("suggested_y_index") or 1,
+                "x_unit": "um",
+                "y_unit": "Jy",
+                "on_duplicate": "keep_both",
+            },
+        )
+        assert kept.status_code == 200, kept.text
+        assert kept.json().get("id") != ds_id
     finally:
         httpd.shutdown()
 

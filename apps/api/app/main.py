@@ -22,13 +22,20 @@ from .annotations import (
     update_annotation,
 )
 from .datasets import (
+    AuditEvent,
     DatasetDetail,
     DatasetMetadataPatch,
     DatasetSummary,
+    DuplicateDatasetError,
     IngestCommitResponse,
+    append_audit_event,
     datasets_root,
+    find_dataset_ids_by_sha256,
     get_dataset_detail,
     get_dataset_xy,
+    list_all_collections,
+    list_all_tags,
+    list_audit_events,
     list_datasets,
     patch_dataset_metadata,
     save_dataset,
@@ -96,6 +103,24 @@ app.add_middleware(
 )
 
 
+def _duplicate_sha256_http_exception(*, sha256: str, existing_dataset_id: str) -> HTTPException:
+    existing = get_dataset_detail(existing_dataset_id)
+    return HTTPException(
+        status_code=409,
+        detail={
+            "code": "duplicate_sha256",
+            "message": "A dataset with identical file bytes already exists.",
+            "sha256": sha256,
+            "existing_dataset": {
+                "id": existing.id,
+                "name": existing.name,
+                "created_at": existing.created_at,
+                "source_file_name": existing.source_file_name,
+            },
+        },
+    )
+
+
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok", "version": read_version()}
@@ -151,6 +176,7 @@ async def ingest_commit(
     hdu_index: int | None = Form(None),
     x_unit: str = Form(""),
     y_unit: str = Form(""),
+    on_duplicate: str = Form("prompt"),
 ) -> IngestCommitResponse:
     source_name = file.filename or "upload"
     source_lower = source_name.lower()
@@ -161,6 +187,14 @@ async def ingest_commit(
 
     created_at = datetime.now(tz=UTC).isoformat()
     sha = sha256_bytes(raw)
+
+    existing_ids = find_dataset_ids_by_sha256(sha)
+    if existing_ids:
+        existing_id = existing_ids[0]
+        if on_duplicate == "open_existing":
+            return IngestCommitResponse(dataset=get_dataset_detail(existing_id))
+        if on_duplicate != "keep_both":
+            raise _duplicate_sha256_http_exception(sha256=sha, existing_dataset_id=existing_id)
 
     dataset_name = name.strip() or source_name
     ext = os.path.splitext(source_name.lower())[1]
@@ -324,6 +358,13 @@ async def ingest_commit(
         parsed=parsed.model_dump(),
     )
 
+    if existing_ids and on_duplicate == "keep_both":
+        append_audit_event(
+            detail.id,
+            "dataset.duplicate_kept",
+            {"sha256": sha, "duplicate_of_dataset_id": existing_ids[0]},
+        )
+
     return IngestCommitResponse(dataset=detail)
 
 
@@ -350,6 +391,23 @@ def datasets_patch(dataset_id: str, patch: DatasetMetadataPatch) -> DatasetDetai
 @app.get("/datasets/{dataset_id}/data")
 def datasets_get_data(dataset_id: str) -> dict:
     return get_dataset_xy(dataset_id)
+
+
+@app.get("/datasets/{dataset_id}/audit", response_model=list[AuditEvent])
+def datasets_get_audit(dataset_id: str) -> list[AuditEvent]:
+    # CAP-02 (minimal): local-first audit trail.
+    _ = get_dataset_detail(dataset_id)
+    return list_audit_events(dataset_id)
+
+
+@app.get("/tags", response_model=list[str])
+def tags_list() -> list[str]:
+    return list_all_tags()
+
+
+@app.get("/collections", response_model=list[str])
+def collections_list() -> list[str]:
+    return list_all_collections()
 
 
 @app.get("/datasets/{dataset_id}/export/dataset.zip")
@@ -442,6 +500,10 @@ def references_import_jcamp_dx(req: ReferenceImportJCAMPRequest) -> DatasetDetai
     # CAP-07 MVP: server fetch + parse of JCAMP-DX with citation-first metadata.
     try:
         return import_reference_jcamp_dx(req)
+    except DuplicateDatasetError as err:
+        raise _duplicate_sha256_http_exception(
+            sha256=err.sha256, existing_dataset_id=err.existing_dataset_id
+        ) from err
     except ValueError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
     except TimeoutError as err:
@@ -455,6 +517,10 @@ def references_import_line_list_csv(req: ReferenceImportLineListCSVRequest) -> D
     # CAP-07 MVP: line-list import (CSV/tab) by URL with citation-first metadata.
     try:
         return import_reference_line_list_csv(req)
+    except DuplicateDatasetError as err:
+        raise _duplicate_sha256_http_exception(
+            sha256=err.sha256, existing_dataset_id=err.existing_dataset_id
+        ) from err
     except ValueError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
     except TimeoutError as err:
@@ -470,6 +536,10 @@ def references_import_nist_asd_line_list(
     # CAP-07: NIST ASD Lines import by query (no user-provided URL).
     try:
         return import_reference_nist_asd_line_list(req)
+    except DuplicateDatasetError as err:
+        raise _duplicate_sha256_http_exception(
+            sha256=err.sha256, existing_dataset_id=err.existing_dataset_id
+        ) from err
     except ValueError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
     except TimeoutError as err:
@@ -496,6 +566,10 @@ def telescope_import_fits_by_url(req: TelescopeFITSImportRequest) -> DatasetDeta
     # CAP-08 MVP slice: fetch remote FITS and extract a 1D spectrum from an explicit mapping.
     try:
         return import_telescope_fits_by_url(req)
+    except DuplicateDatasetError as err:
+        raise _duplicate_sha256_http_exception(
+            sha256=err.sha256, existing_dataset_id=err.existing_dataset_id
+        ) from err
     except ValueError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
     except TimeoutError as err:
@@ -532,6 +606,10 @@ def telescope_mast_import_fits_by_data_uri(
     # from an explicit mapping.
     try:
         return import_telescope_fits_by_mast_data_uri(req)
+    except DuplicateDatasetError as err:
+        raise _duplicate_sha256_http_exception(
+            sha256=err.sha256, existing_dataset_id=err.existing_dataset_id
+        ) from err
     except MastHTTPError as err:
         status = err.status_code
         if status >= 500:

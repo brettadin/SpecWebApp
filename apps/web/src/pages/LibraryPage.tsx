@@ -40,6 +40,11 @@ type DatasetSummary = {
   created_at: string
   source_file_name: string
   sha256: string
+  description?: string | null
+  source_type?: string | null
+  tags?: string[]
+  collections?: string[]
+  favorite?: boolean
   reference?: {
     data_type?: string | null
     source_name?: string | null
@@ -158,6 +163,38 @@ export function LibraryPage() {
   const [editName, setEditName] = useState('')
   const [editXUnit, setEditXUnit] = useState('')
   const [editYUnit, setEditYUnit] = useState('')
+  const [editDescription, setEditDescription] = useState('')
+  const [editTags, setEditTags] = useState('')
+  const [editCollections, setEditCollections] = useState('')
+  const [editFavorite, setEditFavorite] = useState(false)
+
+  const [datasetSearch, setDatasetSearch] = useState('')
+  const [datasetFavoritesOnly, setDatasetFavoritesOnly] = useState(false)
+  const [datasetCollection, setDatasetCollection] = useState('')
+
+  const [duplicateConflict, setDuplicateConflict] = useState<
+    | {
+        sha256: string
+        existing: { id: string; name: string; created_at: string; source_file_name: string }
+      }
+    | null
+  >(null)
+
+  const [refDuplicateConflict, setRefDuplicateConflict] = useState<
+    | {
+        sha256: string
+        existing: { id: string; name: string; created_at: string; source_file_name: string }
+      }
+    | null
+  >(null)
+
+  const [mastDuplicateConflict, setMastDuplicateConflict] = useState<
+    | {
+        sha256: string
+        existing: { id: string; name: string; created_at: string; source_file_name: string }
+      }
+    | null
+  >(null)
 
   const [refUrl, setRefUrl] = useState('')
   const [refTitle, setRefTitle] = useState('')
@@ -209,6 +246,39 @@ export function LibraryPage() {
       }
     | null
   >(null)
+
+  function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null
+  }
+
+  async function readDuplicateConflict(res: Response): Promise<
+    | {
+        sha256: string
+        existing: { id: string; name: string; created_at: string; source_file_name: string }
+      }
+    | null
+  > {
+    if (res.status !== 409) return null
+    let payload: unknown = null
+    try {
+      payload = await res.json()
+    } catch {
+      payload = null
+    }
+    const detail = isRecord(payload) ? payload.detail : undefined
+    const detailObj = isRecord(detail) ? detail : null
+    const existing = detailObj && isRecord(detailObj.existing_dataset) ? detailObj.existing_dataset : null
+    if (detailObj?.code !== 'duplicate_sha256' || !existing) return null
+    return {
+      sha256: String(detailObj.sha256 || ''),
+      existing: {
+        id: String(existing.id || ''),
+        name: String(existing.name || ''),
+        created_at: String(existing.created_at || ''),
+        source_file_name: String(existing.source_file_name || ''),
+      },
+    }
+  }
 
   async function refreshDatasets() {
     try {
@@ -262,6 +332,10 @@ export function LibraryPage() {
       setEditName(json.name || '')
       setEditXUnit(json.x_unit || '')
       setEditYUnit(json.y_unit || '')
+      setEditDescription(json.description || '')
+      setEditTags((json.tags || []).join(', '))
+      setEditCollections((json.collections || []).join(', '))
+      setEditFavorite(Boolean(json.favorite))
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       if (/failed to fetch|networkerror|fetch\s*failed/i.test(msg)) {
@@ -290,10 +364,28 @@ export function LibraryPage() {
     setEditError(null)
     setEditBusy(true)
     try {
+      const tags = editTags
+        .split(',')
+        .map((t) => t.trim())
+        .filter(Boolean)
+
+      const collections = editCollections
+        .split(',')
+        .map((t) => t.trim())
+        .filter(Boolean)
+
       const res = await fetch(`http://localhost:8000/datasets/${encodeURIComponent(editDatasetId)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: editName, x_unit: editXUnit, y_unit: editYUnit }),
+        body: JSON.stringify({
+          name: editName,
+          x_unit: editXUnit,
+          y_unit: editYUnit,
+          description: editDescription,
+          tags,
+          collections,
+          favorite: editFavorite,
+        }),
       })
       if (!res.ok) {
         const text = await res.text()
@@ -306,7 +398,16 @@ export function LibraryPage() {
       void logSessionEvent({
         type: 'dataset.metadata_update',
         message: `Updated dataset metadata: ${json.name}`,
-        payload: { dataset_id: editDatasetId, name: json.name, x_unit: json.x_unit, y_unit: json.y_unit },
+        payload: {
+          dataset_id: editDatasetId,
+          name: json.name,
+          x_unit: json.x_unit,
+          y_unit: json.y_unit,
+          description: json.description,
+          tags: json.tags,
+          collections: json.collections,
+          favorite: json.favorite,
+        },
       })
     } catch (e) {
       setEditError(e instanceof Error ? e.message : String(e))
@@ -319,6 +420,7 @@ export function LibraryPage() {
     setError(null)
     setPreview(null)
     setCommitResult(null)
+    setDuplicateConflict(null)
     setSelectedFile(file)
     if (!file) return
 
@@ -360,9 +462,10 @@ export function LibraryPage() {
     }
   }
 
-  async function onCommit() {
+  async function onCommit(duplicatePolicy?: 'prompt' | 'keep_both' | 'open_existing') {
     setError(null)
     setCommitResult(null)
+    setDuplicateConflict(null)
     if (!selectedFile || xIndex === '' || yIndex === '') return
 
     if (preview?.parser === 'fits' && preview.hdu_index == null) {
@@ -377,6 +480,7 @@ export function LibraryPage() {
     form.append('x_unit', xUnit)
     form.append('y_unit', yUnit)
     form.append('name', selectedFile.name)
+    form.append('on_duplicate', duplicatePolicy || 'prompt')
     if (preview?.parser === 'fits' && preview.hdu_index != null) {
       form.append('hdu_index', String(preview.hdu_index))
     }
@@ -387,6 +491,16 @@ export function LibraryPage() {
         method: 'POST',
         body: form,
       })
+      const dup = await readDuplicateConflict(res)
+      if (dup) {
+        setDuplicateConflict(dup)
+        return
+      }
+      if (res.status === 409) {
+        setError('Duplicate dataset detected, but the server response was unexpected.')
+        return
+      }
+
       if (!res.ok) {
         const text = await res.text()
         throw new Error(text || `HTTP ${res.status}`)
@@ -412,8 +526,9 @@ export function LibraryPage() {
     }
   }
 
-  async function onImportReference() {
+  async function onImportReference(duplicatePolicy?: 'prompt' | 'keep_both' | 'open_existing') {
     setRefError(null)
+    setRefDuplicateConflict(null)
 
     const url = refUrl.trim()
     if (!url) return
@@ -439,8 +554,14 @@ export function LibraryPage() {
           trust_tier: 'Primary/Authoritative',
           license: { redistribution_allowed: refRedistributionAllowed },
           query: { entered_url: url },
+          on_duplicate: duplicatePolicy || 'prompt',
         }),
       })
+      const dup = await readDuplicateConflict(res)
+      if (dup) {
+        setRefDuplicateConflict(dup)
+        return
+      }
       if (!res.ok) {
         const text = await res.text()
         throw new Error(text || `HTTP ${res.status}`)
@@ -832,9 +953,10 @@ export function LibraryPage() {
     }
   }
 
-  async function onMastImport() {
+  async function onMastImport(duplicatePolicy?: 'prompt' | 'keep_both' | 'open_existing') {
     setMastError(null)
     setMastImported(null)
+    setMastDuplicateConflict(null)
     if (!mastPreview || mastHduIndex === '' || mastXIndex === '' || mastYIndex === '') return
     if (!mastSelectedDataURI.trim()) return
     if (!mastCitation.trim()) {
@@ -875,8 +997,14 @@ export function LibraryPage() {
           y_index: Number(mastYIndex),
           x_unit: mastXUnit.trim() || null,
           y_unit: mastYUnit.trim() || null,
+          on_duplicate: duplicatePolicy || 'prompt',
         }),
       })
+      const dup = await readDuplicateConflict(res)
+      if (dup) {
+        setMastDuplicateConflict(dup)
+        return
+      }
       if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`)
       const json = (await res.json()) as { id: string; name: string; created_at: string; source_file_name: string; sha256: string }
       setMastImported(json)
@@ -899,6 +1027,7 @@ export function LibraryPage() {
           mission: mastMission || 'Other',
         },
       })
+      setMastDuplicateConflict(null)
     } catch (e) {
       setMastError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -1096,13 +1225,37 @@ export function LibraryPage() {
                   <label>
                     Y unit (optional): <input value={yUnit} onChange={(e) => setYUnit(e.target.value)} placeholder="e.g., flux" />
                   </label>
-                  <button disabled={busy || !selectedFile || xIndex === '' || yIndex === ''} onClick={onCommit}>
+                  <button
+                    disabled={busy || !selectedFile || xIndex === '' || yIndex === ''}
+                    onClick={() => void onCommit()}
+                  >
                     Import
                   </button>
                   <button disabled={busy} onClick={refreshDatasets}>
                     Refresh list
                   </button>
                 </div>
+
+                {duplicateConflict ? (
+                  <div style={{ marginTop: '0.75rem', border: uiBorder, borderRadius: '0.5rem', padding: '0.5rem' }}>
+                    <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Duplicate detected</div>
+                    <div style={{ fontSize: '0.9rem', opacity: 0.9 }}>
+                      A dataset with identical bytes already exists:
+                    </div>
+                    <div style={{ marginTop: '0.25rem', fontSize: '0.9rem' }}>
+                      <span style={{ fontWeight: 700 }}>{duplicateConflict.existing.name}</span> ({duplicateConflict.existing.id})
+                    </div>
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
+                      <button type="button" disabled={busy} onClick={() => void onCommit('open_existing')}>
+                        Use existing
+                      </button>
+                      <button type="button" disabled={busy} onClick={() => void onCommit('keep_both')}>
+                        Keep both
+                      </button>
+                      <Link to={`/plot?dataset=${encodeURIComponent(duplicateConflict.existing.id)}`}>Open existing in Plot</Link>
+                    </div>
+                  </div>
+                ) : null}
               </div>
 
               <div style={{ marginTop: '0.75rem', overflow: 'auto', border: uiBorder, borderRadius: '0.5rem' }}>
@@ -1236,13 +1389,32 @@ export function LibraryPage() {
               </label>
 
               <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                <button type="button" onClick={onImportReference} disabled={refBusy}>
+                <button type="button" onClick={() => void onImportReference()} disabled={refBusy}>
                   {refBusy ? 'Importing…' : 'Import reference'}
                 </button>
                 <button type="button" onClick={refreshDatasets} disabled={refBusy}>
                   Refresh list
                 </button>
               </div>
+
+              {refDuplicateConflict ? (
+                <div style={{ marginTop: '0.75rem', border: uiBorder, borderRadius: '0.5rem', padding: '0.5rem' }}>
+                  <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Duplicate detected</div>
+                  <div style={{ fontSize: '0.9rem', opacity: 0.9 }}>A dataset with identical bytes already exists:</div>
+                  <div style={{ marginTop: '0.25rem', fontSize: '0.9rem' }}>
+                    <span style={{ fontWeight: 700 }}>{refDuplicateConflict.existing.name}</span> ({refDuplicateConflict.existing.id})
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
+                    <button type="button" disabled={refBusy} onClick={() => void onImportReference('open_existing')}>
+                      Use existing
+                    </button>
+                    <button type="button" disabled={refBusy} onClick={() => void onImportReference('keep_both')}>
+                      Keep both
+                    </button>
+                    <Link to={`/plot?dataset=${encodeURIComponent(refDuplicateConflict.existing.id)}`}>Open existing in Plot</Link>
+                  </div>
+                </div>
+              ) : null}
             </div>
           </details>
         </div>
@@ -1681,7 +1853,7 @@ export function LibraryPage() {
                 <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                   <button
                     type="button"
-                    onClick={onMastImport}
+                    onClick={() => void onMastImport()}
                     disabled={
                       mastBusy ||
                       !mastSelectedDataURI.trim() ||
@@ -1694,6 +1866,25 @@ export function LibraryPage() {
                     {mastBusy ? 'Importing…' : 'Import telescope dataset'}
                   </button>
                 </div>
+
+                {mastDuplicateConflict ? (
+                  <div style={{ marginTop: '0.75rem', border: uiBorder, borderRadius: '0.5rem', padding: '0.5rem' }}>
+                    <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Duplicate detected</div>
+                    <div style={{ fontSize: '0.9rem', opacity: 0.9 }}>A dataset with identical bytes already exists:</div>
+                    <div style={{ marginTop: '0.25rem', fontSize: '0.9rem' }}>
+                      <span style={{ fontWeight: 700 }}>{mastDuplicateConflict.existing.name}</span> ({mastDuplicateConflict.existing.id})
+                    </div>
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
+                      <button type="button" disabled={mastBusy} onClick={() => void onMastImport('open_existing')}>
+                        Use existing
+                      </button>
+                      <button type="button" disabled={mastBusy} onClick={() => void onMastImport('keep_both')}>
+                        Keep both
+                      </button>
+                      <Link to={`/plot?dataset=${encodeURIComponent(mastDuplicateConflict.existing.id)}`}>Open existing in Plot</Link>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             </div>
           ) : null}
@@ -1723,17 +1914,82 @@ export function LibraryPage() {
           {datasets.length ? (
             <div>
               <h2 style={{ fontSize: '1rem' }}>Datasets</h2>
+
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
+                <input
+                  aria-label="Search datasets"
+                  value={datasetSearch}
+                  onChange={(e) => setDatasetSearch(e.target.value)}
+                  placeholder="Search name, tags, id"
+                />
+                <select
+                  aria-label="Filter by collection"
+                  value={datasetCollection}
+                  onChange={(e) => setDatasetCollection(e.target.value)}
+                >
+                  <option value="">All collections</option>
+                  {Array.from(new Set(datasets.flatMap((d) => d.collections || [])))
+                    .sort()
+                    .map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                </select>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <input
+                    type="checkbox"
+                    checked={datasetFavoritesOnly}
+                    onChange={(e) => setDatasetFavoritesOnly(e.target.checked)}
+                  />
+                  Favorites only
+                </label>
+              </div>
+
               <ul>
-                {datasets.map((d) => (
+                {datasets
+                  .filter((d) => (datasetFavoritesOnly ? Boolean(d.favorite) : true))
+                  .filter((d) => (datasetCollection ? (d.collections || []).includes(datasetCollection) : true))
+                  .filter((d) => {
+                    const q = datasetSearch.trim().toLowerCase()
+                    if (!q) return true
+                    const hay = [
+                      d.name,
+                      d.id,
+                      ...(d.tags || []),
+                      ...(d.collections || []),
+                      d.source_file_name,
+                      d.description || '',
+                    ]
+                      .filter(Boolean)
+                      .join(' ')
+                      .toLowerCase()
+                    return hay.includes(q)
+                  })
+                  .map((d) => (
                   <li key={d.id}>
                     <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
                       <div>
+                        {d.favorite ? '★ ' : ''}
                         {d.name} ({d.id})
                       </div>
                       <button type="button" onClick={() => void onToggleEditDataset(d.id)} disabled={editBusy}>
                         {editDatasetId === d.id ? 'Close editor' : 'Edit metadata'}
                       </button>
                     </div>
+
+                    {d.tags?.length ? (
+                      <div style={{ fontSize: '0.875rem', opacity: 0.85 }}>Tags: {d.tags.join(', ')}</div>
+                    ) : null}
+
+                    {d.collections?.length ? (
+                      <div style={{ fontSize: '0.875rem', opacity: 0.85 }}>Collections: {d.collections.join(', ')}</div>
+                    ) : null}
+
+                    {d.description ? (
+                      <div style={{ fontSize: '0.875rem', opacity: 0.85 }}>{d.description}</div>
+                    ) : null}
+
                     {d.reference ? (
                       <div style={{ fontSize: '0.875rem', opacity: 0.85 }}>
                         Reference{d.reference.data_type ? `: ${d.reference.data_type}` : ''}
@@ -1784,6 +2040,50 @@ export function LibraryPage() {
                             />
                           </label>
                         </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem', marginTop: '0.5rem' }}>
+                          <label>
+                            <div style={{ marginBottom: '0.25rem' }}>Tags</div>
+                            <input
+                              value={editTags}
+                              onChange={(e) => setEditTags(e.target.value)}
+                              disabled={editBusy}
+                              placeholder="comma-separated"
+                              style={{ width: '100%' }}
+                            />
+                          </label>
+                          <label>
+                            <div style={{ marginBottom: '0.25rem' }}>Collections</div>
+                            <input
+                              value={editCollections}
+                              onChange={(e) => setEditCollections(e.target.value)}
+                              disabled={editBusy}
+                              placeholder="comma-separated"
+                              style={{ width: '100%' }}
+                            />
+                          </label>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                            <input
+                              type="checkbox"
+                              checked={editFavorite}
+                              onChange={(e) => setEditFavorite(e.target.checked)}
+                              disabled={editBusy}
+                            />
+                            Favorite
+                          </label>
+                        </div>
+
+                        <label style={{ display: 'block', marginTop: '0.5rem' }}>
+                          <div style={{ marginBottom: '0.25rem' }}>Description</div>
+                          <textarea
+                            value={editDescription}
+                            onChange={(e) => setEditDescription(e.target.value)}
+                            disabled={editBusy}
+                            rows={3}
+                            style={{ width: '100%' }}
+                            placeholder="(optional)"
+                          />
+                        </label>
 
                         <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
                           <button type="button" onClick={() => void onSaveDatasetMetadata()} disabled={editBusy}>

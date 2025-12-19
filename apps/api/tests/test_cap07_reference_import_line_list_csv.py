@@ -73,5 +73,66 @@ def test_cap07_import_reference_line_list_csv_by_url(tmp_path, monkeypatch):
         assert payload["x"] == [500.0, 600.0, 700.0]
         assert payload["y"] == [1.0, 2.0, 3.0]
         assert payload.get("reference", {}).get("data_type") == "LineList"
+
+        dup = client.post(
+            "/references/import/line-list-csv",
+            json={
+                "title": "NIST ASD Lines (Example)",
+                "source_name": "NIST ASD",
+                "source_url": url,
+                "citation_text": "NIST ASD, retrieved for testing",
+                "x_unit": "nm",
+                "delimiter": ",",
+                "has_header": True,
+                "x_index": 0,
+                "strength_index": 1,
+                "license": {"redistribution_allowed": "unknown"},
+                "trust_tier": "Primary/Authoritative",
+            },
+        )
+        assert dup.status_code == 409, dup.text
+        detail = dup.json().get("detail", {})
+        assert detail.get("code") == "duplicate_sha256"
+        assert detail.get("existing_dataset", {}).get("id") == ds_id
+
+        opened = client.post(
+            "/references/import/line-list-csv",
+            json={
+                "title": "NIST ASD Lines (Example)",
+                "source_name": "NIST ASD",
+                "source_url": url,
+                "citation_text": "NIST ASD, retrieved for testing",
+                "x_unit": "nm",
+                "delimiter": ",",
+                "has_header": True,
+                "x_index": 0,
+                "strength_index": 1,
+                "license": {"redistribution_allowed": "unknown"},
+                "trust_tier": "Primary/Authoritative",
+                "on_duplicate": "open_existing",
+            },
+        )
+        assert opened.status_code == 200, opened.text
+        assert opened.json().get("id") == ds_id
+
+        kept = client.post(
+            "/references/import/line-list-csv",
+            json={
+                "title": "NIST ASD Lines (Example)",
+                "source_name": "NIST ASD",
+                "source_url": url,
+                "citation_text": "NIST ASD, retrieved for testing",
+                "x_unit": "nm",
+                "delimiter": ",",
+                "has_header": True,
+                "x_index": 0,
+                "strength_index": 1,
+                "license": {"redistribution_allowed": "unknown"},
+                "trust_tier": "Primary/Authoritative",
+                "on_duplicate": "keep_both",
+            },
+        )
+        assert kept.status_code == 200, kept.text
+        assert kept.json().get("id") != ds_id
     finally:
         httpd.shutdown()
