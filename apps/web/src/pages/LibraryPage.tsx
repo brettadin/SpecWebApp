@@ -134,7 +134,11 @@ type TelescopeFITSPreviewResponse = {
 }
 
 export function LibraryPage() {
-    const location = useLocation()
+  const location = useLocation()
+  type LibraryTab = 'import' | 'reference' | 'telescope' | 'datasets'
+  const [activeTab, setActiveTab] = useState<LibraryTab>('import')
+  const uiBorder = '1px solid rgb(from var(--border) r g b)'
+  const uiMutedBg = 'rgb(from var(--muted) r g b)'
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [refBusy, setRefBusy] = useState(false)
@@ -905,296 +909,362 @@ export function LibraryPage() {
   return (
     <section>
       <h1>Library</h1>
-      <p>Start with a local file import preview (CAP-01). No transforms happen here.</p>
-
-      <label>
-        <div style={{ marginTop: '0.5rem', marginBottom: '0.25rem' }}>
-          Choose a file (CSV/TXT/FITS/JCAMP-DX):
-        </div>
-        <input
-          type="file"
-          accept=".csv,.txt,.fits,.fit,.jdx,.dx,.jcamp,text/csv,text/plain,application/fits"
-          disabled={busy}
-          onChange={(e) => onPickFile(e.target.files?.[0] ?? null)}
-        />
-      </label>
-
-      {busy ? <p>Previewing…</p> : null}
-      {error ? (
-        <div style={{ border: '1px solid #e5e7eb', padding: '0.5rem', marginTop: '0.5rem' }}>
-          <p style={{ color: 'crimson', margin: 0 }}>{error}</p>
-          <p style={{ marginTop: '0.25rem', marginBottom: 0 }}>
-            <Link to="/docs?doc=cap-01&q=messy%20csv">Learn more: common import/preview issues</Link>
-          </p>
-        </div>
-      ) : null}
-
-      {preview ? (
-        <div style={{ marginTop: '1rem' }}>
-          <h2 style={{ fontSize: '1rem' }}>Preview</h2>
-          <p style={{ marginTop: '0.25rem', marginBottom: '0.25rem' }}>
-            Parser: <strong>{preview.parser}</strong>
-          </p>
-          {preview.source_metadata && Object.keys(preview.source_metadata).length ? (
-            <div
+      <div
+        role="tablist"
+        aria-label="Library sections"
+        style={{
+          display: 'flex',
+          gap: '0.5rem',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          padding: '0.25rem',
+          border: '1px solid rgb(from var(--border) r g b)',
+          borderRadius: '0.5rem',
+          background: 'rgb(from var(--card) r g b)',
+          marginBottom: '0.75rem',
+        }}
+      >
+        {(
+          [
+            { id: 'import', label: 'Import' },
+            { id: 'reference', label: 'Reference' },
+            { id: 'telescope', label: 'Telescope' },
+            { id: 'datasets', label: 'Datasets' },
+          ] as const
+        ).map((t) => {
+          const selected = activeTab === t.id
+          return (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={selected}
+              onClick={() => setActiveTab(t.id)}
               style={{
-                marginTop: '0.5rem',
-                border: '1px solid #e5e7eb',
-                padding: '0.5rem',
+                cursor: 'pointer',
+                padding: '0.35rem 0.6rem',
+                borderRadius: '0.375rem',
+                border: '1px solid rgb(from var(--border) r g b)',
+                background: selected ? 'rgb(from var(--muted) r g b)' : 'transparent',
+                color: 'rgb(from var(--foreground) r g b)',
+                fontWeight: selected ? 700 : 500,
               }}
             >
-              <div style={{ fontSize: '0.9rem', marginBottom: '0.25rem' }}>
-                Detected header metadata (from the file’s preamble):
+              {t.label}
+            </button>
+          )
+        })}
+      </div>
+
+      {activeTab === 'import' ? (
+        <>
+          <p>Start with a local file import preview (CAP-01). No transforms happen here.</p>
+
+          <label>
+            <div style={{ marginTop: '0.5rem', marginBottom: '0.25rem' }}>Choose a file (CSV/TXT/FITS/JCAMP-DX):</div>
+            <input
+              type="file"
+              accept=".csv,.txt,.fits,.fit,.fts,.fits.gz,.fit.gz,.fts.gz,.jdx,.dx,.jcamp,text/csv,text/plain,application/fits"
+              disabled={busy}
+              onChange={(e) => onPickFile(e.target.files?.[0] ?? null)}
+            />
+          </label>
+
+          {busy ? <p>Previewing…</p> : null}
+          {error ? (
+            <div style={{ border: uiBorder, padding: '0.5rem', marginTop: '0.5rem' }}>
+              <p style={{ color: 'crimson', margin: 0 }}>{error}</p>
+              <p style={{ marginTop: '0.25rem', marginBottom: 0 }}>
+                <Link to="/docs?doc=cap-01&q=messy%20csv">Learn more: common import/preview issues</Link>
+              </p>
+            </div>
+          ) : null}
+
+          {preview ? (
+            <div style={{ marginTop: '1rem' }}>
+              <h2 style={{ fontSize: '1rem' }}>Preview</h2>
+              <p style={{ marginTop: '0.25rem', marginBottom: '0.25rem' }}>
+                Parser: <strong>{preview.parser}</strong>
+              </p>
+              {preview.source_metadata && Object.keys(preview.source_metadata).length ? (
+                <div
+                  style={{
+                    marginTop: '0.5rem',
+                    border: uiBorder,
+                    padding: '0.5rem',
+                    borderRadius: '0.5rem',
+                    background: 'rgb(from var(--card) r g b)',
+                  }}
+                >
+                  <div style={{ fontSize: '0.9rem', marginBottom: '0.25rem' }}>
+                    Detected header metadata (from the file’s preamble):
+                  </div>
+                  <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: '0.9rem' }}>
+                    <tbody>
+                      {Object.entries(preview.source_metadata).map(([k, v]) => (
+                        <tr key={k}>
+                          <td style={{ padding: '0.1rem 0.25rem', fontWeight: 600, verticalAlign: 'top' }}>{k}</td>
+                          <td style={{ padding: '0.1rem 0.25rem', verticalAlign: 'top' }}>{v}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
+              {preview.parser === 'fits' && preview.fits_hdu_candidates?.length ? (
+                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '0.25rem' }}>
+                  <label>
+                    FITS HDU:{' '}
+                    <select value={preview.hdu_index ?? ''} onChange={(e) => onChangeFitsHdu(Number(e.target.value))} disabled={busy}>
+                      {preview.fits_hdu_candidates.map((c) => (
+                        <option key={c.hdu_index} value={c.hdu_index}>
+                          {c.hdu_index}: {c.hdu_name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              ) : null}
+              {preview.warnings.length ? (
+                <ul>
+                  {preview.warnings.map((w) => (
+                    <li key={w}>{w}</li>
+                  ))}
+                </ul>
+              ) : null}
+
+              <div style={{ display: 'grid', gap: '0.5rem', marginTop: '0.75rem' }}>
+                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <label>
+                    X column:{' '}
+                    <select value={xIndex} onChange={(e) => setXIndex(e.target.value === '' ? '' : Number(e.target.value))}>
+                      <option value="">(select)</option>
+                      {preview.columns.map((c) => (
+                        <option key={c.index} value={c.index}>
+                          {c.index}: {c.name}
+                          {c.is_numeric
+                            ? ' (numeric)'
+                            : c.non_numeric_count
+                              ? ` (messy: ${c.non_numeric_count} non-numeric)`
+                              : ' (non-numeric)'}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label>
+                    Y column:{' '}
+                    <select value={yIndex} onChange={(e) => setYIndex(e.target.value === '' ? '' : Number(e.target.value))}>
+                      <option value="">(select)</option>
+                      {preview.columns.map((c) => (
+                        <option key={c.index} value={c.index}>
+                          {c.index}: {c.name}
+                          {c.is_numeric
+                            ? ' (numeric)'
+                            : c.non_numeric_count
+                              ? ` (messy: ${c.non_numeric_count} non-numeric)`
+                              : ' (non-numeric)'}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <button
+                    type="button"
+                    disabled={busy || preview.suggested_x_index == null || preview.suggested_y_index == null}
+                    onClick={() => {
+                      if (preview.suggested_x_index != null) setXIndex(preview.suggested_x_index)
+                      if (preview.suggested_y_index != null) setYIndex(preview.suggested_y_index)
+                      if (!xUnit.trim() && preview.x_unit_hint) setXUnit(preview.x_unit_hint)
+                      if (!yUnit.trim() && preview.y_unit_hint) setYUnit(preview.y_unit_hint)
+                    }}
+                    style={{ cursor: 'pointer' }}
+                    title="Apply the preview’s best-guess X/Y columns"
+                  >
+                    Use suggested
+                  </button>
+                </div>
+
+                <div style={{ fontSize: '0.9rem' }}>
+                  Units are optional and used for display/conversion only. Don’t enter min/max ranges here.
+                </div>
+
+                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <label>
+                    X unit (optional): <input value={xUnit} onChange={(e) => setXUnit(e.target.value)} placeholder="e.g., nm" />
+                  </label>
+                  <label>
+                    Y unit (optional): <input value={yUnit} onChange={(e) => setYUnit(e.target.value)} placeholder="e.g., flux" />
+                  </label>
+                  <button disabled={busy || !selectedFile || xIndex === '' || yIndex === ''} onClick={onCommit}>
+                    Import
+                  </button>
+                  <button disabled={busy} onClick={refreshDatasets}>
+                    Refresh list
+                  </button>
+                </div>
               </div>
-              <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: '0.9rem' }}>
-                <tbody>
-                  {Object.entries(preview.source_metadata).map(([k, v]) => (
-                    <tr key={k}>
-                      <td style={{ padding: '0.1rem 0.25rem', fontWeight: 600, verticalAlign: 'top' }}>{k}</td>
-                      <td style={{ padding: '0.1rem 0.25rem', verticalAlign: 'top' }}>{v}</td>
+
+              <div style={{ marginTop: '0.75rem', overflow: 'auto', border: uiBorder, borderRadius: '0.5rem' }}>
+                <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+                  <thead>
+                    <tr>
+                      {preview.columns.map((c) => (
+                        <th key={c.index} style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>
+                          {c.name}
+                        </th>
+                      ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : null}
-          {preview.parser === 'fits' && preview.fits_hdu_candidates?.length ? (
-            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '0.25rem' }}>
-              <label>
-                FITS HDU:{' '}
-                <select
-                  value={preview.hdu_index ?? ''}
-                  onChange={(e) => onChangeFitsHdu(Number(e.target.value))}
-                  disabled={busy}
-                >
-                  {preview.fits_hdu_candidates.map((c) => (
-                    <option key={c.hdu_index} value={c.hdu_index}>
-                      {c.hdu_index}: {c.hdu_name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-          ) : null}
-          {preview.warnings.length ? (
-            <ul>
-              {preview.warnings.map((w) => (
-                <li key={w}>{w}</li>
-              ))}
-            </ul>
-          ) : null}
-
-          <div style={{ display: 'grid', gap: '0.5rem', marginTop: '0.75rem' }}>
-            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-              <label>
-                X column:{' '}
-                <select
-                  value={xIndex}
-                  onChange={(e) => setXIndex(e.target.value === '' ? '' : Number(e.target.value))}
-                >
-                  <option value="">(select)</option>
-                  {preview.columns.map((c) => (
-                    <option key={c.index} value={c.index}>
-                      {c.index}: {c.name}
-                      {c.is_numeric ? ' (numeric)' : c.non_numeric_count ? ` (messy: ${c.non_numeric_count} non-numeric)` : ' (non-numeric)'}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label>
-                Y column:{' '}
-                <select
-                  value={yIndex}
-                  onChange={(e) => setYIndex(e.target.value === '' ? '' : Number(e.target.value))}
-                >
-                  <option value="">(select)</option>
-                  {preview.columns.map((c) => (
-                    <option key={c.index} value={c.index}>
-                      {c.index}: {c.name}
-                      {c.is_numeric ? ' (numeric)' : c.non_numeric_count ? ` (messy: ${c.non_numeric_count} non-numeric)` : ' (non-numeric)'}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <button
-                type="button"
-                disabled={busy || preview.suggested_x_index == null || preview.suggested_y_index == null}
-                onClick={() => {
-                  if (preview.suggested_x_index != null) setXIndex(preview.suggested_x_index)
-                  if (preview.suggested_y_index != null) setYIndex(preview.suggested_y_index)
-                  // Only prefill units when the preview extracted them from headers.
-                  if (!xUnit.trim() && preview.x_unit_hint) setXUnit(preview.x_unit_hint)
-                  if (!yUnit.trim() && preview.y_unit_hint) setYUnit(preview.y_unit_hint)
-                }}
-                style={{ cursor: 'pointer' }}
-                title="Apply the preview’s best-guess X/Y columns"
-              >
-                Use suggested
-              </button>
-            </div>
-
-            <div style={{ fontSize: '0.9rem' }}>
-              Units are optional and used for display/conversion only. Don’t enter min/max ranges here.
-            </div>
-
-            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-              <label>
-                X unit (optional):{' '}
-                <input value={xUnit} onChange={(e) => setXUnit(e.target.value)} placeholder="e.g., nm" />
-              </label>
-              <label>
-                Y unit (optional):{' '}
-                <input value={yUnit} onChange={(e) => setYUnit(e.target.value)} placeholder="e.g., flux" />
-              </label>
-              <button disabled={busy || !selectedFile || xIndex === '' || yIndex === ''} onClick={onCommit}>
-                Import
-              </button>
-              <button disabled={busy} onClick={refreshDatasets}>
-                Refresh list
-              </button>
-            </div>
-          </div>
-
-          <div style={{ marginTop: '0.75rem', overflow: 'auto', border: '1px solid #e5e7eb' }}>
-            <table style={{ borderCollapse: 'collapse', width: '100%' }}>
-              <thead>
-                <tr>
-                  {preview.columns.map((c) => (
-                    <th
-                      key={c.index}
-                      style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}
-                    >
-                      {c.name}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {!preview.preview_rows.length ? (
-                  <tr>
-                    <td style={{ padding: '0.25rem 0.5rem' }} colSpan={Math.max(1, preview.columns.length)}>
-                      (No inline preview rows for this file type.)
-                    </td>
-                  </tr>
-                ) : null}
-                {preview.preview_rows.map((row, i) => (
-                  <tr key={i}>
-                    {row.map((cell, j) => (
-                      <td key={j} style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>
-                        {cell}
-                      </td>
+                  </thead>
+                  <tbody>
+                    {!preview.preview_rows.length ? (
+                      <tr>
+                        <td style={{ padding: '0.25rem 0.5rem' }} colSpan={Math.max(1, preview.columns.length)}>
+                          (No inline preview rows for this file type.)
+                        </td>
+                      </tr>
+                    ) : null}
+                    {preview.preview_rows.map((row, i) => (
+                      <tr key={i}>
+                        {row.map((cell, j) => (
+                          <td key={j} style={{ padding: '0.25rem 0.5rem', borderBottom: `1px solid ${uiMutedBg}` }}>
+                            {cell}
+                          </td>
+                        ))}
+                      </tr>
                     ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : null}
+
+          {commitResult ? (
+            <div style={{ marginTop: '1rem' }}>
+              <h2 style={{ fontSize: '1rem' }}>Imported</h2>
+              <pre
+                style={{
+                  background: uiMutedBg,
+                  padding: '0.75rem',
+                  borderRadius: '0.5rem',
+                  overflow: 'auto',
+                }}
+              >
+                {JSON.stringify(commitResult.dataset, null, 2)}
+              </pre>
+            </div>
+          ) : null}
+        </>
+      ) : null}
+
+      {activeTab === 'reference' ? (
+        <div style={{ marginTop: '0.25rem' }}>
+          <h2 style={{ fontSize: '1rem' }}>Add reference data (CAP-07)</h2>
+          <p style={{ marginTop: '0.25rem' }}>
+            URL-based reference import (server fetch + parse). Citation text is required.
+          </p>
+
+          {refError ? (
+            <div style={{ border: uiBorder, padding: '0.5rem', marginTop: '0.5rem' }}>
+              <p style={{ color: 'crimson', margin: 0 }}>{refError}</p>
+            </div>
+          ) : null}
+
+          <details open style={{ marginTop: '0.5rem', border: uiBorder, borderRadius: '0.5rem', padding: '0.5rem' }}>
+            <summary style={{ cursor: 'pointer', fontWeight: 700 }}>Import reference by URL (JCAMP-DX)</summary>
+            <div style={{ display: 'grid', gap: '0.5rem', maxWidth: 720, marginTop: '0.5rem' }}>
+              <label>
+                <div style={{ marginBottom: '0.25rem' }}>JCAMP-DX URL</div>
+                <input
+                  aria-label="Reference URL"
+                  value={refUrl}
+                  onChange={(e) => setRefUrl(e.target.value)}
+                  placeholder="https://.../spectrum.jdx"
+                  style={{ width: '100%' }}
+                  disabled={refBusy}
+                />
+              </label>
+
+              <label>
+                <div style={{ marginBottom: '0.25rem' }}>Title</div>
+                <input
+                  aria-label="Reference title"
+                  value={refTitle}
+                  onChange={(e) => setRefTitle(e.target.value)}
+                  placeholder="e.g., NIST WebBook IR: CO2"
+                  style={{ width: '100%' }}
+                  disabled={refBusy}
+                />
+              </label>
+
+              <label>
+                <div style={{ marginBottom: '0.25rem' }}>Source name</div>
+                <input
+                  aria-label="Reference source name"
+                  value={refSourceName}
+                  onChange={(e) => setRefSourceName(e.target.value)}
+                  placeholder="e.g., NIST Chemistry WebBook"
+                  style={{ width: '100%' }}
+                  disabled={refBusy}
+                />
+              </label>
+
+              <label>
+                <div style={{ marginBottom: '0.25rem' }}>Citation text</div>
+                <input
+                  aria-label="Reference citation"
+                  value={refCitation}
+                  onChange={(e) => setRefCitation(e.target.value)}
+                  placeholder="Required (CAP-07): human-readable citation"
+                  style={{ width: '100%' }}
+                  disabled={refBusy}
+                />
+              </label>
+
+              <label>
+                <div style={{ marginBottom: '0.25rem' }}>Redistribution allowed</div>
+                <select
+                  aria-label="Reference redistribution"
+                  value={refRedistributionAllowed}
+                  onChange={(e) => setRefRedistributionAllowed(e.target.value as 'unknown' | 'yes' | 'no')}
+                  disabled={refBusy}
+                >
+                  <option value="unknown">Unknown (default restrictive)</option>
+                  <option value="no">No</option>
+                  <option value="yes">Yes</option>
+                </select>
+              </label>
+
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <button type="button" onClick={onImportReference} disabled={refBusy}>
+                  {refBusy ? 'Importing…' : 'Import reference'}
+                </button>
+                <button type="button" onClick={refreshDatasets} disabled={refBusy}>
+                  Refresh list
+                </button>
+              </div>
+            </div>
+          </details>
         </div>
       ) : null}
 
-      <div style={{ marginTop: '1.25rem', borderTop: '1px solid #e5e7eb', paddingTop: '1rem' }}>
-        <h2 style={{ fontSize: '1rem' }}>Add reference data (CAP-07)</h2>
-        <p style={{ marginTop: '0.25rem' }}>
-          Import a reference spectrum by URL (server fetch + parse). Citation text is required.
-        </p>
+      {activeTab === 'telescope' ? (
+        <div style={{ marginTop: '0.25rem' }}>
+          <h2 style={{ fontSize: '1rem' }}>Add telescope data (CAP-08, MAST)</h2>
+          <p style={{ marginTop: '0.25rem' }}>
+            Search MAST by target name, choose an observation + product, preview extraction candidates, then import with
+            citation-first provenance.
+          </p>
 
-        {refError ? (
-          <div style={{ border: '1px solid #e5e7eb', padding: '0.5rem', marginTop: '0.5rem' }}>
-            <p style={{ color: 'crimson', margin: 0 }}>{refError}</p>
-          </div>
-        ) : null}
+          {mastError ? (
+            <div style={{ border: uiBorder, padding: '0.5rem', marginTop: '0.5rem' }}>
+              <p style={{ color: 'crimson', margin: 0 }}>{mastError}</p>
+            </div>
+          ) : null}
 
-        <div style={{ display: 'grid', gap: '0.5rem', maxWidth: 720 }}>
-          <label>
-            <div style={{ marginBottom: '0.25rem' }}>JCAMP-DX URL</div>
-            <input
-              aria-label="Reference URL"
-              value={refUrl}
-              onChange={(e) => setRefUrl(e.target.value)}
-              placeholder="https://.../spectrum.jdx"
-              style={{ width: '100%' }}
-              disabled={refBusy}
-            />
-          </label>
-
-          <label>
-            <div style={{ marginBottom: '0.25rem' }}>Title</div>
-            <input
-              aria-label="Reference title"
-              value={refTitle}
-              onChange={(e) => setRefTitle(e.target.value)}
-              placeholder="e.g., NIST WebBook IR: CO2"
-              style={{ width: '100%' }}
-              disabled={refBusy}
-            />
-          </label>
-
-          <label>
-            <div style={{ marginBottom: '0.25rem' }}>Source name</div>
-            <input
-              aria-label="Reference source name"
-              value={refSourceName}
-              onChange={(e) => setRefSourceName(e.target.value)}
-              placeholder="e.g., NIST Chemistry WebBook"
-              style={{ width: '100%' }}
-              disabled={refBusy}
-            />
-          </label>
-
-          <label>
-            <div style={{ marginBottom: '0.25rem' }}>Citation text</div>
-            <input
-              aria-label="Reference citation"
-              value={refCitation}
-              onChange={(e) => setRefCitation(e.target.value)}
-              placeholder="Required (CAP-07): human-readable citation"
-              style={{ width: '100%' }}
-              disabled={refBusy}
-            />
-          </label>
-
-          <label>
-            <div style={{ marginBottom: '0.25rem' }}>Redistribution allowed</div>
-            <select
-              aria-label="Reference redistribution"
-              value={refRedistributionAllowed}
-              onChange={(e) => setRefRedistributionAllowed(e.target.value as 'unknown' | 'yes' | 'no')}
-              disabled={refBusy}
-            >
-              <option value="unknown">Unknown (default restrictive)</option>
-              <option value="no">No</option>
-              <option value="yes">Yes</option>
-            </select>
-          </label>
-
-          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <button type="button" onClick={onImportReference} disabled={refBusy}>
-              {refBusy ? 'Importing…' : 'Import reference'}
-            </button>
-            <button type="button" onClick={refreshDatasets} disabled={refBusy}>
-              Refresh list
-            </button>
-          </div>
-
-        </div>
-      </div>
-
-      <div style={{ marginTop: '1.25rem', borderTop: '1px solid #e5e7eb', paddingTop: '1rem' }}>
-        <h2 style={{ fontSize: '1rem' }}>Add telescope data (CAP-08, MAST)</h2>
-        <p style={{ marginTop: '0.25rem' }}>
-          Search MAST by target name, choose an observation + product, preview extraction candidates, then import with
-          citation-first provenance.
-        </p>
-
-        {mastError ? (
-          <div style={{ border: '1px solid #e5e7eb', padding: '0.5rem', marginTop: '0.5rem' }}>
-            <p style={{ color: 'crimson', margin: 0 }}>{mastError}</p>
-          </div>
-        ) : null}
-
-        <div style={{ display: 'grid', gap: '0.5rem', maxWidth: 900 }}>
+          <details open style={{ marginTop: '0.5rem', border: uiBorder, borderRadius: '0.5rem', padding: '0.5rem' }}>
+            <summary style={{ cursor: 'pointer', fontWeight: 700 }}>Search & import from MAST</summary>
+            <div style={{ display: 'grid', gap: '0.5rem', maxWidth: 900, marginTop: '0.5rem' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: '0.5rem' }}>
             <label>
               <div style={{ marginBottom: '0.25rem' }}>Target name</div>
@@ -1291,7 +1361,7 @@ export function LibraryPage() {
           ) : null}
 
           {mastLookupCandidates.length > 1 && !mastResolved ? (
-            <div style={{ border: '1px solid #e5e7eb', padding: '0.5rem' }}>
+            <div style={{ border: uiBorder, padding: '0.5rem', borderRadius: '0.5rem' }}>
               <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Disambiguate target (CAP-15)</div>
               <div style={{ fontSize: '0.875rem', opacity: 0.85, marginBottom: '0.5rem' }}>
                 Multiple matches were returned. Pick one to continue.
@@ -1319,23 +1389,23 @@ export function LibraryPage() {
           ) : null}
 
           {mastCaomRows.length ? (
-            <div style={{ border: '1px solid #e5e7eb', overflow: 'auto' }}>
+            <div style={{ border: uiBorder, overflow: 'auto', borderRadius: '0.5rem' }}>
               <table style={{ borderCollapse: 'collapse', width: '100%' }}>
                 <thead>
                   <tr>
-                    <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>
+                    <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>
                       Select
                     </th>
-                    <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>
+                    <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>
                       obsid
                     </th>
-                    <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>
+                    <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>
                       mission
                     </th>
-                    <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>
+                    <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>
                       target
                     </th>
-                    <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>
+                    <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>
                       type
                     </th>
                   </tr>
@@ -1343,7 +1413,7 @@ export function LibraryPage() {
                 <tbody>
                   {mastCaomRows.slice(0, 25).map((r, idx) => (
                     <tr key={String(r.obsid ?? idx)}>
-                      <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>
+                      <td style={{ padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>
                         <button
                           type="button"
                           onClick={() => onMastSelectObservation(r.obsid ?? null)}
@@ -1352,16 +1422,16 @@ export function LibraryPage() {
                           {mastSelectedObsId === r.obsid ? 'Selected' : 'Choose'}
                         </button>
                       </td>
-                      <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>
+                      <td style={{ padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>
                         {r.obsid != null ? String(r.obsid) : ''}
                       </td>
-                      <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>
+                      <td style={{ padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>
                         {r.obs_collection ?? ''}
                       </td>
-                      <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>
+                      <td style={{ padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>
                         {r.target_name ?? ''}
                       </td>
-                      <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>
+                      <td style={{ padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>
                         {r.dataproduct_type ?? ''}
                       </td>
                     </tr>
@@ -1374,23 +1444,23 @@ export function LibraryPage() {
           {mastProducts.length ? (
             <div>
               <div style={{ fontWeight: 700, marginTop: '0.5rem' }}>Products</div>
-              <div style={{ border: '1px solid #e5e7eb', overflow: 'auto' }}>
+              <div style={{ border: uiBorder, overflow: 'auto', borderRadius: '0.5rem' }}>
                 <table style={{ borderCollapse: 'collapse', width: '100%' }}>
                   <thead>
                     <tr>
-                      <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>
+                      <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>
                         Select
                       </th>
-                      <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>
+                      <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>
                         recommended
                       </th>
-                      <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>
+                      <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>
                         filename
                       </th>
-                      <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>
+                      <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>
                         calib
                       </th>
-                      <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: '1px solid #e5e7eb' }}>
+                      <th style={{ textAlign: 'left', padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>
                         type
                       </th>
                     </tr>
@@ -1399,10 +1469,10 @@ export function LibraryPage() {
                     {mastProducts.slice(0, 50).map((p, idx) => {
                       const uri = typeof p.dataURI === 'string' ? p.dataURI : ''
                       const filename = p.productFilename ?? ''
-                      const selected = uri && uri === mastSelectedDataURI
+                      const selected = Boolean(uri) && uri === mastSelectedDataURI
                       return (
-                        <tr key={uri || `${idx}`}> 
-                          <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>
+                        <tr key={uri || `${idx}`}>
+                          <td style={{ padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>
                             <input
                               type="radio"
                               name="mast-product"
@@ -1416,14 +1486,14 @@ export function LibraryPage() {
                               }}
                             />
                           </td>
-                          <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>
+                          <td style={{ padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>
                             {p.recommended ? 'yes' : ''}
                           </td>
-                          <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>{filename}</td>
-                          <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>
+                          <td style={{ padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>{filename}</td>
+                          <td style={{ padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>
                             {typeof p.calib_level === 'number' ? String(p.calib_level) : ''}
                           </td>
-                          <td style={{ padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}>{p.productType ?? ''}</td>
+                          <td style={{ padding: '0.25rem 0.5rem', borderBottom: uiBorder }}>{p.productType ?? ''}</td>
                         </tr>
                       )
                     })}
@@ -1454,10 +1524,10 @@ export function LibraryPage() {
                 <div
                   style={{
                     marginTop: '0.5rem',
-                    border: '1px solid #e5e7eb',
+                    border: uiBorder,
                     padding: '0.5rem',
                     borderRadius: '0.5rem',
-                    background: '#f9fafb',
+                    background: 'rgb(from var(--card) r g b)',
                   }}
                 >
                   <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Cache</div>
@@ -1633,7 +1703,7 @@ export function LibraryPage() {
               <div style={{ fontWeight: 700 }}>Imported</div>
               <pre
                 style={{
-                  background: '#f3f4f6',
+                  background: uiMutedBg,
                   padding: '0.75rem',
                   borderRadius: '0.5rem',
                   overflow: 'auto',
@@ -1643,94 +1713,93 @@ export function LibraryPage() {
               </pre>
             </div>
           ) : null}
-        </div>
-      </div>
-
-      {commitResult ? (
-        <div style={{ marginTop: '1rem' }}>
-          <h2 style={{ fontSize: '1rem' }}>Imported</h2>
-          <pre style={{ background: '#f3f4f6', padding: '0.75rem', borderRadius: '0.5rem', overflow: 'auto' }}>
-            {JSON.stringify(commitResult.dataset, null, 2)}
-          </pre>
+            </div>
+          </details>
         </div>
       ) : null}
 
-      {datasets.length ? (
-        <div style={{ marginTop: '1rem' }}>
-          <h2 style={{ fontSize: '1rem' }}>Datasets</h2>
-          <ul>
-            {datasets.map((d) => (
-              <li key={d.id}>
-                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                  <div>
-                    {d.name} ({d.id})
-                  </div>
-                  <button type="button" onClick={() => void onToggleEditDataset(d.id)} disabled={editBusy}>
-                    {editDatasetId === d.id ? 'Close editor' : 'Edit metadata'}
-                  </button>
-                </div>
-                {d.reference ? (
-                  <div style={{ fontSize: '0.875rem', opacity: 0.85 }}>
-                    Reference{d.reference.data_type ? `: ${d.reference.data_type}` : ''}
-                    {d.reference.source_name ? ` — ${d.reference.source_name}` : ''}
-                    {typeof d.reference.citation_present === 'boolean'
-                      ? ` (citation: ${d.reference.citation_present ? 'yes' : 'no'})`
-                      : ''}
-                    {d.reference.license_redistribution_allowed
-                      ? ` (redistribution: ${d.reference.license_redistribution_allowed})`
-                      : ''}
-                  </div>
-                ) : null}
-
-                {editDatasetId === d.id ? (
-                  <div style={{ marginTop: '0.5rem' }}>
-                    {editError ? (
-                      <div style={{ color: 'crimson', marginBottom: '0.5rem' }}>{editError}</div>
+      {activeTab === 'datasets' ? (
+        <div style={{ marginTop: '0.25rem' }}>
+          {datasets.length ? (
+            <div>
+              <h2 style={{ fontSize: '1rem' }}>Datasets</h2>
+              <ul>
+                {datasets.map((d) => (
+                  <li key={d.id}>
+                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <div>
+                        {d.name} ({d.id})
+                      </div>
+                      <button type="button" onClick={() => void onToggleEditDataset(d.id)} disabled={editBusy}>
+                        {editDatasetId === d.id ? 'Close editor' : 'Edit metadata'}
+                      </button>
+                    </div>
+                    {d.reference ? (
+                      <div style={{ fontSize: '0.875rem', opacity: 0.85 }}>
+                        Reference{d.reference.data_type ? `: ${d.reference.data_type}` : ''}
+                        {d.reference.source_name ? ` — ${d.reference.source_name}` : ''}
+                        {typeof d.reference.citation_present === 'boolean'
+                          ? ` (citation: ${d.reference.citation_present ? 'yes' : 'no'})`
+                          : ''}
+                        {d.reference.license_redistribution_allowed
+                          ? ` (redistribution: ${d.reference.license_redistribution_allowed})`
+                          : ''}
+                      </div>
                     ) : null}
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem' }}>
-                      <label>
-                        <div style={{ marginBottom: '0.25rem' }}>Name</div>
-                        <input
-                          value={editName}
-                          onChange={(e) => setEditName(e.target.value)}
-                          disabled={editBusy}
-                          style={{ width: '100%' }}
-                        />
-                      </label>
-                      <label>
-                        <div style={{ marginBottom: '0.25rem' }}>X unit</div>
-                        <input
-                          value={editXUnit}
-                          onChange={(e) => setEditXUnit(e.target.value)}
-                          disabled={editBusy}
-                          placeholder="(optional)"
-                          style={{ width: '100%' }}
-                        />
-                      </label>
-                      <label>
-                        <div style={{ marginBottom: '0.25rem' }}>Y unit</div>
-                        <input
-                          value={editYUnit}
-                          onChange={(e) => setEditYUnit(e.target.value)}
-                          disabled={editBusy}
-                          placeholder="(optional)"
-                          style={{ width: '100%' }}
-                        />
-                      </label>
-                    </div>
+                    {editDatasetId === d.id ? (
+                      <div style={{ marginTop: '0.5rem' }}>
+                        {editError ? (
+                          <div style={{ color: 'crimson', marginBottom: '0.5rem' }}>{editError}</div>
+                        ) : null}
 
-                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
-                      <button type="button" onClick={() => void onSaveDatasetMetadata()} disabled={editBusy}>
-                        {editBusy ? 'Saving…' : 'Save metadata'}
-                      </button>
-                      <Link to={`/plot?dataset=${encodeURIComponent(d.id)}`}>Open in Plot</Link>
-                    </div>
-                  </div>
-                ) : null}
-              </li>
-            ))}
-          </ul>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem' }}>
+                          <label>
+                            <div style={{ marginBottom: '0.25rem' }}>Name</div>
+                            <input
+                              value={editName}
+                              onChange={(e) => setEditName(e.target.value)}
+                              disabled={editBusy}
+                              style={{ width: '100%' }}
+                            />
+                          </label>
+                          <label>
+                            <div style={{ marginBottom: '0.25rem' }}>X unit</div>
+                            <input
+                              value={editXUnit}
+                              onChange={(e) => setEditXUnit(e.target.value)}
+                              disabled={editBusy}
+                              placeholder="(optional)"
+                              style={{ width: '100%' }}
+                            />
+                          </label>
+                          <label>
+                            <div style={{ marginBottom: '0.25rem' }}>Y unit</div>
+                            <input
+                              value={editYUnit}
+                              onChange={(e) => setEditYUnit(e.target.value)}
+                              disabled={editBusy}
+                              placeholder="(optional)"
+                              style={{ width: '100%' }}
+                            />
+                          </label>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+                          <button type="button" onClick={() => void onSaveDatasetMetadata()} disabled={editBusy}>
+                            {editBusy ? 'Saving…' : 'Save metadata'}
+                          </button>
+                          <Link to={`/plot?dataset=${encodeURIComponent(d.id)}`}>Open in Plot</Link>
+                        </div>
+                      </div>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <div style={{ opacity: 0.85 }}>No datasets yet.</div>
+          )}
         </div>
       ) : null}
     </section>

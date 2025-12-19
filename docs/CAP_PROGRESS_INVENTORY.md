@@ -298,14 +298,19 @@ This is a repo-wide inventory mapping each CAP spec in `docs/CAPS/` to the curre
 **What’s working now**
 - Three-column shell layout with collapsible Library + Inspector panels.
 - State persistence for panel collapse state via `localStorage`.
+- Tokenized theme layer and baseline component styling via a shared CSS variables file.
+- Consistent base visuals for `input/select/textarea/button` and styled disclosure blocks (`details/summary`).
+- App shell polish (nav pills, subtle header translucency/shadow) using theme tokens.
 
 **Primary evidence**
 - App shell layout: `apps/web/src/App.tsx`
 - Panel slot plumbing: `apps/web/src/layout/panelSlotsContext.ts`, `apps/web/src/layout/PanelSlots.tsx`
+- Theme tokens + base styling: `apps/web/src/styles/scientific_theme.css`
+- Theme import entrypoint: `apps/web/src/main.tsx`
 
 **Not yet / gaps vs full CAP**
-- Theme system (dark/light tokens) and consistent component styling (currently mostly inline styles).
-- Accessibility/contrast enforcement and a true design-token layer.
+- Light theme (or user-selectable theme switching) and formal contrast/accessibility checks.
+- Continued reduction of inline style overrides in favor of a small set of shared primitives/classes.
 
 ---
 
