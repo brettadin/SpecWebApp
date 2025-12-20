@@ -79,6 +79,8 @@ type Annotation = {
   dataset_id: string
   type: 'point' | 'range_x' | string
   text: string
+  tags?: string[]
+  link?: string | null
   author_user_id: string
   created_at: string
   updated_at: string
@@ -309,9 +311,12 @@ export function PlotPage() {
   const [annotationFilterType, setAnnotationFilterType] = useState<'all' | 'point' | 'range_x' | 'other'>('all')
   const [annotationFilterText, setAnnotationFilterText] = useState('')
   const [annotationFilterAuthor, setAnnotationFilterAuthor] = useState('')
+  const [annotationFilterTag, setAnnotationFilterTag] = useState('')
   const [annotationHighlightOpacity, setAnnotationHighlightOpacity] = useState(0.25)
   const [editingAnnotation, setEditingAnnotation] = useState<{ datasetId: string; annotationId: string } | null>(null)
   const [editingAnnotationText, setEditingAnnotationText] = useState('')
+  const [editingAnnotationTags, setEditingAnnotationTags] = useState('')
+  const [editingAnnotationLink, setEditingAnnotationLink] = useState('')
   const [editingAnnotationX0, setEditingAnnotationX0] = useState('')
   const [editingAnnotationX1, setEditingAnnotationX1] = useState('')
   const [editingAnnotationY0, setEditingAnnotationY0] = useState('')
@@ -347,6 +352,8 @@ export function PlotPage() {
   const [newPointX, setNewPointX] = useState('')
   const [newPointY, setNewPointY] = useState('')
   const [newPointText, setNewPointText] = useState('')
+  const [newAnnotationTags, setNewAnnotationTags] = useState('')
+  const [newAnnotationLink, setNewAnnotationLink] = useState('')
   const [newRangeX0, setNewRangeX0] = useState('')
   const [newRangeX1, setNewRangeX1] = useState('')
   const [newRangeText, setNewRangeText] = useState('')
@@ -1290,6 +1297,7 @@ export function PlotPage() {
     if (!showAnnotations) return { data: [...traces, ...derived, ...featureTraces], anyDecimated }
 
     const noteTextNeedle = annotationFilterText.trim().toLowerCase()
+    const noteTagNeedle = annotationFilterTag.trim().toLowerCase()
     const noteAuthorNeedle = annotationFilterAuthor.trim().toLowerCase()
 
     const noteTraces = activeSeries
@@ -1303,6 +1311,9 @@ export function PlotPage() {
           if (a.x0 == null) return false
           if (noteAuthorNeedle && !a.author_user_id.toLowerCase().includes(noteAuthorNeedle)) return false
           if (noteTextNeedle && !a.text.toLowerCase().includes(noteTextNeedle)) return false
+          if (noteTagNeedle && !(a.tags ?? []).some((tag) => String(tag).toLowerCase().includes(noteTagNeedle))) {
+            return false
+          }
           return true
         })
         if (!points.length) return null
@@ -1331,6 +1342,7 @@ export function PlotPage() {
     aliasByDerivedId,
     annotationFilterAuthor,
     annotationFilterDatasetId,
+    annotationFilterTag,
     annotationFilterText,
     annotationFilterType,
     annotationVisibilityByDatasetId,
@@ -1359,6 +1371,7 @@ export function PlotPage() {
     if (!showAnnotations) return { shapes, refs }
 
     const textNeedle = annotationFilterText.trim().toLowerCase()
+    const tagNeedle = annotationFilterTag.trim().toLowerCase()
     const authorNeedle = annotationFilterAuthor.trim().toLowerCase()
     for (const t of activeSeries) {
       if (annotationVisibilityByDatasetId[t.id] === false) continue
@@ -1372,6 +1385,7 @@ export function PlotPage() {
         if (annotationFilterType === 'range_x' && a.type !== 'range_x') continue
         if (authorNeedle && !a.author_user_id.toLowerCase().includes(authorNeedle)) continue
         if (textNeedle && !a.text.toLowerCase().includes(textNeedle)) continue
+        if (tagNeedle && !(a.tags ?? []).some((tag) => String(tag).toLowerCase().includes(tagNeedle))) continue
         if (a.type !== 'range_x') continue
         if (a.x0 == null || a.x1 == null) continue
 
@@ -1397,6 +1411,7 @@ export function PlotPage() {
     activeSeries,
     annotationFilterAuthor,
     annotationFilterDatasetId,
+    annotationFilterTag,
     annotationFilterText,
     annotationFilterType,
     annotationHighlightOpacity,
@@ -1466,6 +1481,12 @@ export function PlotPage() {
           continue
         }
         if (annotationFilterText && !ann.text.toLowerCase().includes(annotationFilterText.toLowerCase())) continue
+        if (
+          annotationFilterTag &&
+          !(ann.tags ?? []).some((tag) => String(tag).toLowerCase().includes(annotationFilterTag.toLowerCase()))
+        ) {
+          continue
+        }
         out.push({ datasetId, datasetName, ann })
       }
     }
@@ -1480,6 +1501,7 @@ export function PlotPage() {
     annotationFilterType,
     annotationFilterAuthor,
     annotationFilterText,
+    annotationFilterTag,
   ])
 
   useEffect(() => {
@@ -1763,7 +1785,18 @@ export function PlotPage() {
       }
       const xCanonical = canonicalUnit ? convertXScalarToCanonical(xDisplay, canonicalUnit, displayXUnit) : xDisplay
 
-      const body: { text: string; x: number; y?: number } = { text: newPointText.trim(), x: xCanonical }
+      const tags = newAnnotationTags
+        .split(',')
+        .map((t) => t.trim())
+        .filter(Boolean)
+      const link = newAnnotationLink.trim()
+
+      const body: { text: string; tags?: string[]; link?: string; x: number; y?: number } = {
+        text: newPointText.trim(),
+        tags: tags.length ? tags : undefined,
+        link: link ? link : undefined,
+        x: xCanonical,
+      }
       const y = newPointY.trim() === '' ? null : Number(newPointY)
       if (y != null && Number.isFinite(y)) body.y = y
 
@@ -1781,6 +1814,8 @@ export function PlotPage() {
       setNewPointX('')
       setNewPointY('')
       setNewPointText('')
+      setNewAnnotationTags('')
+      setNewAnnotationLink('')
       setShowAnnotations(true)
 
       void logSessionEvent({
@@ -1816,13 +1851,25 @@ export function PlotPage() {
       const x0Canonical = canonicalUnit ? convertXScalarToCanonical(x0Display, canonicalUnit, displayXUnit) : x0Display
       const x1Canonical = canonicalUnit ? convertXScalarToCanonical(x1Display, canonicalUnit, displayXUnit) : x1Display
 
+      const tags = newAnnotationTags
+        .split(',')
+        .map((t) => t.trim())
+        .filter(Boolean)
+      const link = newAnnotationLink.trim()
+
       setError(null)
       const res = await fetch(
         `${API_BASE}/datasets/${encodeURIComponent(newAnnotationDatasetId)}/annotations/range-x`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: newRangeText.trim(), x0: x0Canonical, x1: x1Canonical }),
+          body: JSON.stringify({
+            text: newRangeText.trim(),
+            tags: tags.length ? tags : undefined,
+            link: link ? link : undefined,
+            x0: x0Canonical,
+            x1: x1Canonical,
+          }),
         },
       )
       if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`)
@@ -1830,6 +1877,8 @@ export function PlotPage() {
       setNewRangeX0('')
       setNewRangeX1('')
       setNewRangeText('')
+      setNewAnnotationTags('')
+      setNewAnnotationLink('')
       setShowAnnotations(true)
 
       void logSessionEvent({
@@ -1855,7 +1904,7 @@ export function PlotPage() {
     async (
       datasetId: string,
       annotationId: string,
-      patch: { text?: string; x0?: number; x1?: number; y0?: number; y1?: number },
+      patch: { text?: string; tags?: string[]; link?: string | null; x0?: number; x1?: number; y0?: number; y1?: number },
     ) => {
       setError(null)
       try {
@@ -1966,7 +2015,14 @@ export function PlotPage() {
     const current = anns.find((a) => a.annotation_id === annotationId)
     if (!current) throw new Error('Annotation not found.')
 
-    const patch: { text?: string; x0?: number; x1?: number; y0?: number; y1?: number } = { text: nextText }
+    const patch: { text?: string; tags?: string[]; link?: string | null; x0?: number; x1?: number; y0?: number; y1?: number } = { text: nextText }
+
+    const tags = editingAnnotationTags
+      .split(',')
+      .map((t) => t.trim())
+      .filter(Boolean)
+    patch.tags = tags
+    patch.link = editingAnnotationLink.trim() || null
 
     const x0DisplayRaw = editingAnnotationX0.trim()
     const x1DisplayRaw = editingAnnotationX1.trim()
@@ -2001,6 +2057,8 @@ export function PlotPage() {
     await onUpdateAnnotation(datasetId, annotationId, patch)
     setEditingAnnotation(null)
     setEditingAnnotationText('')
+    setEditingAnnotationTags('')
+    setEditingAnnotationLink('')
     setEditingAnnotationX0('')
     setEditingAnnotationX1('')
     setEditingAnnotationY0('')
@@ -2023,6 +2081,8 @@ export function PlotPage() {
       if (editingAnnotation?.datasetId === datasetId && editingAnnotation?.annotationId === annotationId) {
         setEditingAnnotation(null)
         setEditingAnnotationText('')
+        setEditingAnnotationTags('')
+        setEditingAnnotationLink('')
       }
 
       void logSessionEvent({
@@ -4095,6 +4155,24 @@ export function PlotPage() {
         </div>
 
         <div style={{ marginTop: '0.5rem' }}>
+          <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Optional metadata</div>
+          <input
+            aria-label="New annotation tags"
+            placeholder="tags (comma-separated)"
+            value={newAnnotationTags}
+            onChange={(e) => setNewAnnotationTags(e.target.value)}
+            style={{ width: '100%' }}
+          />
+          <input
+            aria-label="New annotation link"
+            placeholder="link (optional URL)"
+            value={newAnnotationLink}
+            onChange={(e) => setNewAnnotationLink(e.target.value)}
+            style={{ width: '100%', marginTop: '0.5rem' }}
+          />
+        </div>
+
+        <div style={{ marginTop: '0.5rem' }}>
           <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Point note</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
             <input aria-label="New point x" placeholder="x" value={newPointX} onChange={(e) => setNewPointX(e.target.value)} />
@@ -4178,6 +4256,15 @@ export function PlotPage() {
                 />
               </div>
               <div>
+                <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Tag</label>
+                <input
+                  value={annotationFilterTag}
+                  onChange={(e) => setAnnotationFilterTag(e.target.value)}
+                  placeholder="tag"
+                  style={{ width: '100%' }}
+                />
+              </div>
+              <div>
                 <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Author</label>
                 <input
                   value={annotationFilterAuthor}
@@ -4207,12 +4294,28 @@ export function PlotPage() {
                         {ann.type} <span style={{ fontWeight: 400, opacity: 0.8 }}>— {datasetName}</span>
                       </div>
                       {editingAnnotation?.datasetId === datasetId && editingAnnotation?.annotationId === ann.annotation_id ? (
-                        <input
-                          aria-label="Edit annotation text"
-                          value={editingAnnotationText}
-                          onChange={(e) => setEditingAnnotationText(e.target.value)}
-                          style={{ width: '100%', marginTop: '0.25rem' }}
-                        />
+                        <>
+                          <input
+                            aria-label="Edit annotation text"
+                            value={editingAnnotationText}
+                            onChange={(e) => setEditingAnnotationText(e.target.value)}
+                            style={{ width: '100%', marginTop: '0.25rem' }}
+                          />
+                          <input
+                            aria-label="Edit annotation tags"
+                            value={editingAnnotationTags}
+                            onChange={(e) => setEditingAnnotationTags(e.target.value)}
+                            placeholder="tags (comma-separated)"
+                            style={{ width: '100%', marginTop: '0.25rem' }}
+                          />
+                          <input
+                            aria-label="Edit annotation link"
+                            value={editingAnnotationLink}
+                            onChange={(e) => setEditingAnnotationLink(e.target.value)}
+                            placeholder="link (optional URL)"
+                            style={{ width: '100%', marginTop: '0.25rem' }}
+                          />
+                        </>
                       ) : (
                         <div style={{ marginTop: '0.25rem' }}>{ann.text}</div>
                       )}
@@ -4257,6 +4360,8 @@ export function PlotPage() {
                             onClick={() => {
                               setEditingAnnotation(null)
                               setEditingAnnotationText('')
+                              setEditingAnnotationTags('')
+                              setEditingAnnotationLink('')
                             }}
                             style={{ cursor: 'pointer' }}
                           >
@@ -4270,6 +4375,8 @@ export function PlotPage() {
                             onClick={() => {
                               setEditingAnnotation({ datasetId, annotationId: ann.annotation_id })
                               setEditingAnnotationText(ann.text)
+                              setEditingAnnotationTags((ann.tags ?? []).join(', '))
+                              setEditingAnnotationLink(ann.link ?? '')
                               const s = seriesById[datasetId]
                               const canonicalUnit = s?.x_unit ?? unitHints.x
                               try {

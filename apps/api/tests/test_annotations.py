@@ -24,7 +24,13 @@ def test_annotations_crud_roundtrip(tmp_path) -> None:
     # Create point note
     res2 = client.post(
         f"/datasets/{dataset_id}/annotations/point",
-        json={"text": "peak", "x": 2.0, "y": 20.0},
+        json={
+            "text": "peak",
+            "x": 2.0,
+            "y": 20.0,
+            "tags": ["CH4", "  ch4  ", ""],
+            "link": "  https://example.com/paper  ",
+        },
     )
     assert res2.status_code == 200
     point = res2.json()
@@ -32,6 +38,8 @@ def test_annotations_crud_roundtrip(tmp_path) -> None:
     assert point["x0"] == 2.0
     assert point["y0"] == 20.0
     assert point["x_unit"] == "nm"
+    assert point["tags"] == ["CH4"]
+    assert point["link"] == "https://example.com/paper"
 
     # Create range (order should normalize)
     res3 = client.post(
@@ -53,10 +61,12 @@ def test_annotations_crud_roundtrip(tmp_path) -> None:
     # Update
     res5 = client.put(
         f"/datasets/{dataset_id}/annotations/{point['annotation_id']}",
-        json={"text": "updated"},
+        json={"text": "updated", "tags": ["foo", " Foo ", "bar"], "link": ""},
     )
     assert res5.status_code == 200
     assert res5.json()["text"] == "updated"
+    assert res5.json()["tags"] == ["foo", "bar"]
+    assert res5.json()["link"] is None
 
     # Delete
     res6 = client.delete(f"/datasets/{dataset_id}/annotations/{band['annotation_id']}")

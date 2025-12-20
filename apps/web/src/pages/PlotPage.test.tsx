@@ -235,6 +235,9 @@ describe('PlotPage (CAP-03)', () => {
 
     expect(typeof props?.onRelayout).toBe('function')
 
+    // Allow PlotPage to flush effects that cache shape refs.
+    await new Promise((r) => setTimeout(r, 0))
+
     // Simulate dragging the highlight endpoints.
     props?.onRelayout?.({ 'shapes[0].x0': 1.7, 'shapes[0].x1': 2.7 })
 

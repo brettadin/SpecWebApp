@@ -13,6 +13,8 @@ from .datasets import datasets_root, get_dataset_detail
 class AnnotationBase(BaseModel):
     type: str
     text: str
+    tags: list[str] = Field(default_factory=list)
+    link: str | None = None
     author_user_id: str = "local/anonymous"
     created_at: str
     updated_at: str
@@ -34,22 +36,52 @@ class Annotation(AnnotationBase):
 
 class AnnotationCreatePoint(BaseModel):
     text: str
+    tags: list[str] = Field(default_factory=list)
+    link: str | None = None
     x: float
     y: float | None = None
 
 
 class AnnotationCreateRangeX(BaseModel):
     text: str
+    tags: list[str] = Field(default_factory=list)
+    link: str | None = None
     x0: float
     x1: float
 
 
 class AnnotationUpdate(BaseModel):
     text: str | None = None
+    tags: list[str] | None = None
+    link: str | None = None
     x0: float | None = None
     x1: float | None = None
     y0: float | None = None
     y1: float | None = None
+
+
+def _normalize_tags(tags: list[str] | None) -> list[str]:
+    if not tags:
+        return []
+    out: list[str] = []
+    seen: set[str] = set()
+    for t in tags:
+        s = str(t).strip()
+        if not s:
+            continue
+        key = s.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(s)
+    return out
+
+
+def _normalize_link(link: str | None) -> str | None:
+    if link is None:
+        return None
+    s = str(link).strip()
+    return s or None
 
 
 def _annotations_path(dataset_id: str) -> Path:
@@ -93,6 +125,8 @@ def create_point_note(dataset_id: str, req: AnnotationCreatePoint) -> Annotation
         dataset_id=dataset_id,
         type="point",
         text=req.text,
+        tags=_normalize_tags(req.tags),
+        link=_normalize_link(req.link),
         created_at=now,
         updated_at=now,
         x_unit=detail.x_unit,
@@ -120,6 +154,8 @@ def create_range_x(dataset_id: str, req: AnnotationCreateRangeX) -> Annotation:
         dataset_id=dataset_id,
         type="range_x",
         text=req.text,
+        tags=_normalize_tags(req.tags),
+        link=_normalize_link(req.link),
         created_at=now,
         updated_at=now,
         x_unit=detail.x_unit,
@@ -143,6 +179,10 @@ def update_annotation(dataset_id: str, annotation_id: str, req: AnnotationUpdate
         changed = ann.model_copy(deep=True)
         if req.text is not None:
             changed.text = req.text
+        if req.tags is not None:
+            changed.tags = _normalize_tags(req.tags)
+        if req.link is not None:
+            changed.link = _normalize_link(req.link)
         if req.x0 is not None:
             changed.x0 = float(req.x0)
         if req.x1 is not None:

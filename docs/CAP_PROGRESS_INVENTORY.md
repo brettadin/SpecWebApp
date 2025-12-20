@@ -130,20 +130,25 @@ This is a repo-wide inventory mapping each CAP spec in `docs/CAPS/` to the curre
 - Unit-stable anchoring: annotation X is stored in dataset-native units; display-time conversions are applied at render.
 - Visibility controls: global Show Annotations toggle + per-dataset toggles.
 - Annotation list panel with filters (dataset/type/author/text) that apply to both list and plot rendering.
+- Tag metadata (`tags`) + optional citation/reference pointer (`link`) on annotations; editable inline and filterable.
 - Quick edit: inline edit of annotation text and coordinates (point x/y, range_x x0/x1).
 - Delete confirmation; highlight opacity slider for range bands.
+- Plot-side handle dragging for `range_x` endpoints with persistence.
+- Export contract: `annotations/annotations.json` is always included and referenced in the manifest; exporting with annotations hidden still includes the file and marks it as hidden-in-render.
 
 **Primary evidence**
 - Annotation model + persistence: `apps/api/app/annotations.py`
 - Annotation endpoints: `apps/api/app/main.py`
 - Plot UI for create/list/filter/edit/toggle: `apps/web/src/pages/PlotPage.tsx`
 - API tests: `apps/api/tests/test_annotations.py`
+- Web tests (plot interaction + persistence): `apps/web/src/pages/PlotPage.test.tsx`
+- Export bundle contract + tests: `apps/api/app/export_bundle.py`, `apps/api/tests/test_export_what_i_see.py`
 
 **Not yet / gaps vs full CAP**
-- Interactive handle-dragging for range endpoints (plot-side) for `range_x` highlights.
-- Rich annotation types (range_y, dataset_note, reference_marker) and tag/style/link fields.
+- Rich annotation types (range_y, dataset_note, reference_marker).
+- Annotation `style` field (beyond global opacity control).
 - Permissions enforcement beyond local-first assumptions.
-- Export contract details: marking annotations as hidden_in_render when exported with annotations toggled off.
+- Audit event logging on create/update/delete (beyond basic persistence), if/when CAP-02 audit is the source of truth for this.
 
 ---
 
