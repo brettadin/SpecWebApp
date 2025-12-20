@@ -1,6 +1,6 @@
 # CAP Progress Inventory (repo scan)
 
-Date: 2025-12-19
+Date: 2025-12-20
 
 This is a repo-wide inventory mapping each CAP spec in `docs/CAPS/` to the current implementation state in `apps/api`, `apps/web`, tests, and supporting docs.
 
@@ -99,9 +99,16 @@ This is a repo-wide inventory mapping each CAP spec in `docs/CAPS/` to the curre
 **Status:** Implemented (core)
 
 **What’s working now**
-- Multi-trace overlay plotting with a docked trace list and stable visibility toggles.
-- Robustness helpers (finite coercion, error boundary) to reduce render crashes.
-- Trace grouping concept exists (original vs derived) in the UI.
+- Multi-trace overlay plotting with a trace list and stable visibility toggles.
+- Zoom/pan state is preserved while adding/removing traces (Plotly `uirevision`) with an explicit Reset view control.
+- Status strip shows overlay counts, axes units, current view range, and render mode (full vs view-decimated).
+- Trace panel supports:
+  - show/hide per trace, show all/hide all, isolate
+  - group toggles by source_type (Lab/Reference/Telescope/Other) and by class (Original/Derived)
+  - derived “collapse” UX
+  - quick actions: alias rename, favorite toggle, open dataset detail (event hook), remove-from-plot (hide)
+- View-only performance safeguard: Fast view toggle with large-trace view-decimation (clearly labeled).
+- Tooltip formatting with a compact default and a “detailed tooltips” toggle.
 
 **Primary evidence**
 - Plot/workbench: `apps/web/src/pages/PlotPage.tsx`
@@ -109,7 +116,7 @@ This is a repo-wide inventory mapping each CAP spec in `docs/CAPS/` to the curre
 
 **Not yet / gaps vs full CAP**
 - Persistent workspaces / plot state persistence (ties into CAP-10).
-- Performance features like decimation controls and large-trace ergonomics.
+- Trust badges/warnings on trace items tied to ingest trust signals (partially present elsewhere; not yet surfaced in trace list UI).
 
 ---
 

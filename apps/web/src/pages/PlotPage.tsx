@@ -38,6 +38,11 @@ type DatasetSummary = {
   created_at: string
   source_file_name: string
   sha256: string
+  description?: string | null
+  source_type?: string | null
+  tags?: string[]
+  collections?: string[]
+  favorite?: boolean
   reference?: {
     data_type?: string
     source_name?: string
@@ -179,6 +184,72 @@ function formatUnit(unit: string | null) {
   return unit?.trim() ? unit.trim() : 'unknown'
 }
 
+function shortId(id: string) {
+  const s = String(id)
+  if (s.length <= 8) return s
+  return s.slice(0, 8)
+}
+
+type SourceTypeGroup = 'Lab' | 'Reference' | 'Telescope' | 'Other'
+
+function sourceTypeGroup(value: string | null | undefined): SourceTypeGroup {
+  const v = (value ?? '').trim().toLowerCase()
+  if (!v || v === 'lab') return 'Lab'
+  if (v === 'reference') return 'Reference'
+  if (v === 'telescope') return 'Telescope'
+  return 'Other'
+}
+
+function parsePlotRange(relayout: Record<string, unknown> | null): { x0: number | null; x1: number | null; y0: number | null; y1: number | null } {
+  const out: { x0: number | null; x1: number | null; y0: number | null; y1: number | null } = {
+    x0: null,
+    x1: null,
+    y0: null,
+    y1: null,
+  }
+  if (!relayout) return out
+
+  const x0 = Number(relayout['xaxis.range[0]'])
+  const x1 = Number(relayout['xaxis.range[1]'])
+  if (Number.isFinite(x0) && Number.isFinite(x1) && x0 !== x1) {
+    out.x0 = Math.min(x0, x1)
+    out.x1 = Math.max(x0, x1)
+  }
+
+  const y0 = Number(relayout['yaxis.range[0]'])
+  const y1 = Number(relayout['yaxis.range[1]'])
+  if (Number.isFinite(y0) && Number.isFinite(y1) && y0 !== y1) {
+    out.y0 = Math.min(y0, y1)
+    out.y1 = Math.max(y0, y1)
+  }
+
+  return out
+}
+
+function formatHoverNumber(v: number) {
+  if (!Number.isFinite(v)) return ''
+  const abs = Math.abs(v)
+  if (abs !== 0 && (abs >= 1e6 || abs < 1e-3)) return v.toExponential(3)
+  return Number(v.toPrecision(6)).toString()
+}
+
+function decimateStride(x: number[], y: number[], targetPoints: number): { x: number[]; y: number[] } {
+  const n = Math.min(x.length, y.length)
+  if (n <= targetPoints) return { x: x.slice(0, n), y: y.slice(0, n) }
+  const step = Math.max(1, Math.ceil(n / targetPoints))
+  const outX: number[] = []
+  const outY: number[] = []
+  for (let i = 0; i < n; i += step) {
+    outX.push(x[i])
+    outY.push(y[i])
+  }
+  if (outX.length && outX[outX.length - 1] !== x[n - 1]) {
+    outX.push(x[n - 1])
+    outY.push(y[n - 1])
+  }
+  return { x: outX, y: outY }
+}
+
 function makeId(prefix: string) {
   const rnd = globalThis.crypto && 'randomUUID' in globalThis.crypto ? globalThis.crypto.randomUUID() : null
   return `${prefix}-${rnd ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`}`
@@ -318,6 +389,30 @@ export function PlotPage() {
   const [exportError, setExportError] = useState<string | null>(null)
   const [plotlyRelayout, setPlotlyRelayout] = useState<Record<string, unknown> | null>(null)
 
+  // CAP-03: preserve zoom/pan state across trace changes; allow explicit reset.
+  const [plotUiRevision, setPlotUiRevision] = useState(() => 'spectra-plot')
+
+  // CAP-03: performance + tooltip hygiene.
+  const [fastViewEnabled, setFastViewEnabled] = useState(true)
+  const [detailedTooltips, setDetailedTooltips] = useState(false)
+
+  // CAP-03: derived trace ergonomics.
+  const [collapsedDerived, setCollapsedDerived] = useState(true)
+  const [derivedExpanded, setDerivedExpanded] = useState(false)
+
+  // CAP-03: view-only aliasing for readable trace lists.
+  const [aliasByDatasetId, setAliasByDatasetId] = useState<Record<string, string>>({})
+  const [aliasByDerivedId, setAliasByDerivedId] = useState<Record<string, string>>({})
+  const [aliasEditingKey, setAliasEditingKey] = useState<string | null>(null)
+  const [aliasDraft, setAliasDraft] = useState('')
+
+  const [sourceTypeVisibility, setSourceTypeVisibility] = useState<Record<SourceTypeGroup, boolean>>({
+    Lab: true,
+    Reference: true,
+    Telescope: true,
+    Other: true,
+  })
+
   const [nistSpecies, setNistSpecies] = useState('')
   const [nistBusy, setNistBusy] = useState(false)
   const [nistError, setNistError] = useState<string | null>(null)
@@ -434,6 +529,13 @@ export function PlotPage() {
         filter,
         plotlyRelayout,
 
+        fastViewEnabled,
+        detailedTooltips,
+        collapsedDerived,
+        derivedExpanded,
+        aliasByDatasetId,
+        aliasByDerivedId,
+
         selectedTransformDatasetIds,
         normMode,
         normRangeX0,
@@ -458,8 +560,13 @@ export function PlotPage() {
       },
     })
   }, [
+    aliasByDatasetId,
+    aliasByDerivedId,
     baselineMode,
     baselineOrder,
+    collapsedDerived,
+    derivedExpanded,
+    detailedTooltips,
     derivedTraces,
     diffA,
     diffAlignmentEnabled,
@@ -472,6 +579,7 @@ export function PlotPage() {
     diffTargetGrid,
     diffTau,
     displayXUnit,
+    fastViewEnabled,
     filter,
     includeBaselineTrace,
     normMode,
@@ -551,6 +659,17 @@ export function PlotPage() {
         setShowAnnotations(snap.state.showAnnotations)
         setFilter(snap.state.filter)
         setPlotlyRelayout(snap.state.plotlyRelayout)
+
+        if (typeof snap.state.fastViewEnabled === 'boolean') setFastViewEnabled(snap.state.fastViewEnabled)
+        if (typeof snap.state.detailedTooltips === 'boolean') setDetailedTooltips(snap.state.detailedTooltips)
+        if (typeof snap.state.collapsedDerived === 'boolean') setCollapsedDerived(snap.state.collapsedDerived)
+        if (typeof snap.state.derivedExpanded === 'boolean') setDerivedExpanded(snap.state.derivedExpanded)
+        if (snap.state.aliasByDatasetId && typeof snap.state.aliasByDatasetId === 'object') {
+          setAliasByDatasetId(snap.state.aliasByDatasetId as Record<string, string>)
+        }
+        if (snap.state.aliasByDerivedId && typeof snap.state.aliasByDerivedId === 'object') {
+          setAliasByDerivedId(snap.state.aliasByDerivedId as Record<string, string>)
+        }
 
         setSelectedTransformDatasetIds(snap.state.selectedTransformDatasetIds)
         setNormMode(snap.state.normMode)
@@ -872,15 +991,57 @@ export function PlotPage() {
     })
   }, [featureTraceOptions])
 
-  const plotData = useMemo<PlotParams['data']>(() => {
+  const plotBundle = useMemo(() => {
     const xUnit = xUnitLabel
     const yUnit = formatUnit(unitHints.y)
+
+    const largeThreshold = 500_000
+    const targetPoints = 50_000
+    let anyDecimated = false
+
+    const nameCounts = new Map<string, number>()
+    for (const d of datasets) {
+      const base = (d.name || d.id).trim() || d.id
+      nameCounts.set(base, (nameCounts.get(base) ?? 0) + 1)
+    }
+
+    function displayNameFor(meta: DatasetSummary | undefined, datasetId: string) {
+      const alias = (aliasByDatasetId[datasetId] ?? '').trim()
+      const base = (alias || meta?.name || datasetId).trim() || datasetId
+      const isDup = (nameCounts.get(base) ?? 0) > 1
+      return isDup ? `${base} (${shortId(datasetId)})` : base
+    }
+
+    function hoverTemplateFor(args: {
+      title: string
+      datasetId?: string
+      sourceType?: string | null
+      xUnit: string
+      yUnit: string
+      isLineList?: boolean
+      extraLine?: string | null
+    }) {
+      const parts: string[] = []
+      parts.push(args.title)
+      if (detailedTooltips && args.datasetId) {
+        parts.push(`id=${args.datasetId}`)
+        if (args.sourceType) parts.push(`source=${args.sourceType}`)
+      }
+      parts.push(`x=%{x:.6g} ${args.xUnit}`)
+      if (args.isLineList) {
+        parts.push('strength=%{y:.6g}')
+      } else {
+        parts.push(`y=%{y:.6g} ${args.yUnit}`)
+      }
+      if (detailedTooltips && args.extraLine) parts.push(args.extraLine)
+      return `${parts.join('<br>')}<extra></extra>`
+    }
 
     const traces = activeSeries
       .filter((t) => t.series)
       .map((t, idx) => {
         const s = t.series as DatasetSeries
-        const displayName = t.meta?.name || t.id
+        const displayName = displayNameFor(t.meta, t.id)
 
         const coerced = coerceFinitePairs(s.x, s.y)
         const canonicalX = coerced.x
@@ -890,8 +1051,15 @@ export function PlotPage() {
         try {
           x = convertXFromCanonical(canonicalX, s.x_unit, displayXUnit).x
         } catch {
-          // If X unit is unknown, keep canonical and let the UI guide the user.
           x = canonicalX
+        }
+
+        let y = canonicalY
+        if (fastViewEnabled && canonicalX.length > largeThreshold) {
+          const dec = decimateStride(x, canonicalY, targetPoints)
+          x = dec.x
+          y = dec.y
+          anyDecimated = true
         }
 
         if (s.reference?.data_type === 'LineList') {
@@ -899,21 +1067,35 @@ export function PlotPage() {
             type: 'bar',
             name: displayName,
             x,
-            y: canonicalY,
-            hovertemplate: `${displayName}<br>x=%{x} ${xUnit}<br>strength=%{y}<extra></extra>`,
+            y,
+            hovertemplate: hoverTemplateFor({
+              title: displayName,
+              datasetId: detailedTooltips ? t.id : undefined,
+              sourceType: t.meta?.source_type ?? null,
+              xUnit,
+              yUnit,
+              isLineList: true,
+              extraLine: null,
+            }),
           }
         }
 
-        // Use Plotly defaults for colors; we only provide a stable dash style for differentiation.
         const dash = dashStyles[idx % dashStyles.length]
         return {
           type: 'scatter',
           mode: 'lines',
           name: displayName,
           x,
-          y: canonicalY,
+          y,
           line: { dash },
-          hovertemplate: `${displayName}<br>x=%{x} ${xUnit}<br>y=%{y} ${yUnit}<extra></extra>`,
+          hovertemplate: hoverTemplateFor({
+            title: displayName,
+            datasetId: detailedTooltips ? t.id : undefined,
+            sourceType: t.meta?.source_type ?? null,
+            xUnit,
+            yUnit,
+            extraLine: null,
+          }),
         }
       })
 
@@ -927,14 +1109,31 @@ export function PlotPage() {
         } catch {
           x = t.x
         }
+
+        let y = t.y
+        if (fastViewEnabled && t.x.length > largeThreshold) {
+          const dec = decimateStride(x, t.y, targetPoints)
+          x = dec.x
+          y = dec.y
+          anyDecimated = true
+        }
+
+        const name = (aliasByDerivedId[t.traceId] ?? t.name).trim() || t.name
         return {
           type: 'scatter',
           mode: 'lines',
-          name: t.name,
+          name,
           x,
-          y: t.y,
+          y,
           line: { dash },
-          hovertemplate: `${t.name}<br>x=%{x} ${xUnit}<br>y=%{y} ${formatUnit(t.y_unit)}<extra></extra>`,
+          hovertemplate: hoverTemplateFor({
+            title: name,
+            datasetId: detailedTooltips ? t.parentDatasetId : undefined,
+            sourceType: 'derived',
+            xUnit,
+            yUnit: formatUnit(t.y_unit),
+            extraLine: t.trust.interpolated ? 'interpolated=true' : null,
+          }),
         }
       })
 
@@ -985,7 +1184,7 @@ export function PlotPage() {
       return out
     })()
 
-    if (!showAnnotations) return [...traces, ...derived, ...featureTraces]
+    if (!showAnnotations) return { data: [...traces, ...derived, ...featureTraces], anyDecimated }
 
     const noteTraces = activeSeries
       .map((t) => {
@@ -1010,8 +1209,28 @@ export function PlotPage() {
       })
       .filter((v): v is NonNullable<typeof v> => v != null)
 
-    return [...traces, ...derived, ...noteTraces, ...featureTraces]
-  }, [activeSeries, annotationsByDatasetId, derivedTraces, displayXUnit, featureMode, featureResults, highlightedFeatureRowId, showAnnotations, unitHints.x, unitHints.y, xUnitLabel])
+    return { data: [...traces, ...derived, ...noteTraces, ...featureTraces], anyDecimated }
+  }, [
+    activeSeries,
+    aliasByDatasetId,
+    aliasByDerivedId,
+    annotationsByDatasetId,
+    datasets,
+    derivedTraces,
+    detailedTooltips,
+    displayXUnit,
+    fastViewEnabled,
+    featureMode,
+    featureResults,
+    highlightedFeatureRowId,
+    showAnnotations,
+    unitHints.x,
+    unitHints.y,
+    xUnitLabel,
+  ])
+
+  const plotData = plotBundle.data as PlotParams['data']
+  const anyDecimated = plotBundle.anyDecimated
 
   const plotLayout = useMemo<PlotParams['layout']>(() => {
     const shapes: NonNullable<PlotParams['layout']>['shapes'] = []
@@ -1041,8 +1260,8 @@ export function PlotPage() {
 
     const xName = axisNameHints.xCol ? String(axisNameHints.xCol) : 'X'
     const yName = axisNameHints.yCol ? String(axisNameHints.yCol) : 'Y'
-    const xTitle = unitHints.x ? `${xName} (${xUnitLabel})` : xName
-    const yTitle = unitHints.y ? `${yName} (${formatUnit(unitHints.y)})` : yName
+    const xTitle = `${xName} (${xUnitLabel || 'unknown'})`
+    const yTitle = `${yName} (${formatUnit(unitHints.y)})`
 
     return {
       autosize: true,
@@ -1052,8 +1271,9 @@ export function PlotPage() {
       yaxis: { title: yTitle },
       legend: { orientation: 'h' },
       shapes,
+      uirevision: plotUiRevision,
     }
-  }, [activeSeries, annotationsByDatasetId, axisNameHints.xCol, axisNameHints.yCol, displayXUnit, showAnnotations, unitHints.x, unitHints.y, xUnitLabel])
+  }, [activeSeries, annotationsByDatasetId, axisNameHints.xCol, axisNameHints.yCol, displayXUnit, plotUiRevision, showAnnotations, unitHints.x, unitHints.y, xUnitLabel])
 
   const visibleAnnotations = useMemo(() => {
     if (!showAnnotations) return []
@@ -2219,8 +2439,93 @@ export function PlotPage() {
       .map((t) => ({ t, meta: datasetsById.get(t.datasetId) }))
       .filter((row) => row.meta)
     if (!q) return rows
-    return rows.filter((row) => (row.meta?.name ?? '').toLowerCase().includes(q))
-  }, [traceStates, datasetsById, filter])
+    return rows.filter((row) => {
+      const meta = row.meta
+      if (!meta) return false
+      const parts: string[] = []
+      parts.push(String(meta.name ?? ''))
+      parts.push(String(meta.id ?? ''))
+      parts.push(String(meta.source_file_name ?? ''))
+      for (const t of meta.tags ?? []) parts.push(t)
+      for (const c of meta.collections ?? []) parts.push(c)
+      const alias = aliasByDatasetId[meta.id]
+      if (alias) parts.push(alias)
+      const hay = parts.join(' ').toLowerCase()
+      return hay.includes(q)
+    })
+  }, [aliasByDatasetId, traceStates, datasetsById, filter])
+
+  const traceGroupCounts = useMemo(() => {
+    const counts: Record<SourceTypeGroup, number> = { Lab: 0, Reference: 0, Telescope: 0, Other: 0 }
+    for (const t of traceStates) {
+      const meta = datasetsById.get(t.datasetId)
+      counts[sourceTypeGroup(meta?.source_type)] += 1
+    }
+    return counts
+  }, [datasetsById, traceStates])
+
+  const viewRange = useMemo(() => parsePlotRange(plotlyRelayout), [plotlyRelayout])
+
+  async function onToggleFavorite(datasetId: string, nextFavorite: boolean) {
+    try {
+      const res = await fetch(`${API_BASE}/datasets/${encodeURIComponent(datasetId)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ favorite: nextFavorite }),
+      })
+      if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`)
+      await reloadDatasets()
+      notifyDatasetsChanged({ datasetId, reason: 'dataset.favorite' })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  function onOpenDatasetDetail(datasetId: string) {
+    window.dispatchEvent(new CustomEvent('spectra:library-open-dataset', { detail: { datasetId } }))
+  }
+
+  function beginAliasEdit(key: string, current: string) {
+    setAliasEditingKey(key)
+    setAliasDraft(current)
+  }
+
+  function commitAliasEdit() {
+    const key = aliasEditingKey
+    if (!key) return
+    const draft = aliasDraft.trim()
+    if (key.startsWith('o:')) {
+      const datasetId = key.slice(2)
+      setAliasByDatasetId((prev) => ({ ...prev, [datasetId]: draft }))
+    } else if (key.startsWith('d:')) {
+      const traceId = key.slice(2)
+      setAliasByDerivedId((prev) => ({ ...prev, [traceId]: draft }))
+    }
+    setAliasEditingKey(null)
+    setAliasDraft('')
+  }
+
+  function cancelAliasEdit() {
+    setAliasEditingKey(null)
+    setAliasDraft('')
+  }
+
+  function toggleSourceGroup(group: SourceTypeGroup, next: boolean) {
+    setSourceTypeVisibility((prev) => ({ ...prev, [group]: next }))
+    if (!next) {
+      setTraceStates((prev) =>
+        prev.map((t) => {
+          const meta = datasetsById.get(t.datasetId)
+          if (sourceTypeGroup(meta?.source_type) !== group) return t
+          return { ...t, visible: false }
+        }),
+      )
+    }
+  }
+
+  function toggleDerivedGroup(next: boolean) {
+    setDerivedTraces((prev) => prev.map((t) => ({ ...t, visible: next })))
+  }
 
   const inspectorContent = (
     <>
@@ -2280,7 +2585,7 @@ export function PlotPage() {
           aria-label="Trace filter"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
-          placeholder="Filter by dataset name"
+          placeholder="Filter by name / id / tags / collections"
           style={{ width: '100%' }}
         />
       </div>
@@ -2292,6 +2597,64 @@ export function PlotPage() {
         <button type="button" onClick={onHideAll} style={{ cursor: 'pointer' }}>
           Hide all
         </button>
+
+        <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+          <input type="checkbox" checked={fastViewEnabled} onChange={(e) => setFastViewEnabled(e.target.checked)} />
+          Fast view
+        </label>
+
+        <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+          <input type="checkbox" checked={detailedTooltips} onChange={(e) => setDetailedTooltips(e.target.checked)} />
+          Detailed tooltips
+        </label>
+      </div>
+
+      <div style={{ marginTop: '0.75rem', borderTop: uiBorder, paddingTop: '0.75rem' }}>
+        <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Groups</div>
+        <div style={{ display: 'grid', gap: '0.25rem' }}>
+          {(['Lab', 'Reference', 'Telescope', 'Other'] as const).map((g) => (
+            <label
+              key={g}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}
+            >
+              <span>
+                {g} ({traceGroupCounts[g]})
+              </span>
+              <input
+                type="checkbox"
+                checked={sourceTypeVisibility[g]}
+                onChange={(e) => toggleSourceGroup(g, e.target.checked)}
+                disabled={traceGroupCounts[g] === 0}
+                aria-label={`Toggle group ${g}`}
+              />
+            </label>
+          ))}
+
+          {derivedTraces.length ? (
+            <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+              <span>Derived ({derivedTraces.length})</span>
+              <input
+                type="checkbox"
+                checked={derivedTraces.some((t) => t.visible)}
+                onChange={(e) => toggleDerivedGroup(e.target.checked)}
+                aria-label="Toggle group Derived"
+              />
+            </label>
+          ) : null}
+
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <input
+              type="checkbox"
+              checked={collapsedDerived}
+              onChange={(e) => {
+                setCollapsedDerived(e.target.checked)
+                if (e.target.checked) setDerivedExpanded(false)
+              }}
+              aria-label="Collapse derived"
+            />
+            Collapse derived
+          </label>
+        </div>
       </div>
 
       <div style={{ marginTop: '0.75rem' }}>
@@ -2306,47 +2669,160 @@ export function PlotPage() {
             {filteredTraceRows.map(({ t, meta }) => (
               <div
                 key={t.datasetId}
-                style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto', gap: '0.5rem', alignItems: 'center' }}
+                style={{ border: uiBorder, borderRadius: '0.5rem', padding: '0.5rem' }}
               >
-                <input
-                  type="checkbox"
-                  aria-label={`Toggle ${meta?.name ?? t.datasetId}`}
-                  checked={t.visible}
-                  onChange={(e) => onToggleDataset(t.datasetId, e.target.checked)}
-                />
-                <div title={meta?.name ?? t.datasetId} style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {meta?.name ?? t.datasetId}
+                <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto', gap: '0.5rem', alignItems: 'center' }}>
+                  <input
+                    type="checkbox"
+                    aria-label={`Toggle ${meta?.name ?? t.datasetId}`}
+                    checked={t.visible}
+                    onChange={(e) => onToggleDataset(t.datasetId, e.target.checked)}
+                  />
+                  <div title={meta?.name ?? t.datasetId} style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {aliasByDatasetId[t.datasetId]?.trim() || meta?.name || t.datasetId}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onIsolate(t.datasetId)}
+                    disabled={!t.visible && visibleDatasetIds.length === 0}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    Isolate
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => onIsolate(t.datasetId)}
-                  disabled={!t.visible && visibleDatasetIds.length === 0}
-                  style={{ cursor: 'pointer' }}
-                >
-                  Isolate
-                </button>
+
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.35rem' }}>
+                  <button
+                    type="button"
+                    onClick={() => beginAliasEdit(`o:${t.datasetId}`, aliasByDatasetId[t.datasetId] ?? '')}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    Alias
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => onToggleFavorite(t.datasetId, !(meta?.favorite ?? false))}
+                    style={{ cursor: 'pointer' }}
+                    title="Toggle favorite"
+                  >
+                    {meta?.favorite ? '★' : '☆'}
+                  </button>
+
+                  <button type="button" onClick={() => onOpenDatasetDetail(t.datasetId)} style={{ cursor: 'pointer' }}>
+                    Details
+                  </button>
+
+                  <button type="button" onClick={() => onToggleDataset(t.datasetId, false)} style={{ cursor: 'pointer' }}>
+                    Remove
+                  </button>
+                </div>
               </div>
             ))}
+
+            {aliasEditingKey?.startsWith('o:') ? (
+              <div style={{ border: uiBorder, borderRadius: '0.5rem', padding: '0.5rem', marginTop: '0.5rem' }}>
+                <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Edit alias</div>
+                <input
+                  aria-label="Alias input"
+                  value={aliasDraft}
+                  onChange={(e) => setAliasDraft(e.target.value)}
+                  placeholder="Short display label (optional)"
+                  style={{ width: '100%' }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      commitAliasEdit()
+                    }
+                    if (e.key === 'Escape') {
+                      e.preventDefault()
+                      cancelAliasEdit()
+                    }
+                  }}
+                />
+                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+                  <button type="button" onClick={commitAliasEdit} style={{ cursor: 'pointer' }}>
+                    Save
+                  </button>
+                  <button type="button" onClick={cancelAliasEdit} style={{ cursor: 'pointer' }}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : null}
 
             {derivedTraces.length ? (
               <>
                 <div style={{ fontWeight: 700, marginTop: '0.5rem' }}>Derived</div>
-                {derivedTraces.map((t) => (
-                  <div
-                    key={t.traceId}
-                    style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '0.5rem', alignItems: 'center' }}
+                {collapsedDerived ? (
+                  <button
+                    type="button"
+                    onClick={() => setDerivedExpanded((prev) => !prev)}
+                    style={{ cursor: 'pointer', textAlign: 'left' }}
                   >
-                    <input
-                      type="checkbox"
-                      aria-label={`Toggle ${t.name}`}
-                      checked={t.visible}
-                      onChange={(e) => onToggleDerived(t.traceId, e.target.checked)}
-                    />
-                    <div title={t.name} style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {t.name}
-                    </div>
+                    {derivedExpanded ? '▼' : '▶'} Derived ({derivedTraces.length})
+                  </button>
+                ) : null}
+
+                {!collapsedDerived || derivedExpanded ? (
+                  <div style={{ display: 'grid', gap: '0.25rem' }}>
+                    {derivedTraces.map((t) => (
+                      <div key={t.traceId} style={{ border: uiBorder, borderRadius: '0.5rem', padding: '0.5rem' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '0.5rem', alignItems: 'center' }}>
+                          <input
+                            type="checkbox"
+                            aria-label={`Toggle ${t.name}`}
+                            checked={t.visible}
+                            onChange={(e) => onToggleDerived(t.traceId, e.target.checked)}
+                          />
+                          <div title={t.name} style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {aliasByDerivedId[t.traceId]?.trim() || t.name}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.35rem' }}>
+                          <button
+                            type="button"
+                            onClick={() => beginAliasEdit(`d:${t.traceId}`, aliasByDerivedId[t.traceId] ?? '')}
+                            style={{ cursor: 'pointer' }}
+                          >
+                            Alias
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+
+                    {aliasEditingKey?.startsWith('d:') ? (
+                      <div style={{ border: uiBorder, borderRadius: '0.5rem', padding: '0.5rem', marginTop: '0.5rem' }}>
+                        <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Edit alias</div>
+                        <input
+                          aria-label="Alias input"
+                          value={aliasDraft}
+                          onChange={(e) => setAliasDraft(e.target.value)}
+                          placeholder="Short display label (optional)"
+                          style={{ width: '100%' }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault()
+                              commitAliasEdit()
+                            }
+                            if (e.key === 'Escape') {
+                              e.preventDefault()
+                              cancelAliasEdit()
+                            }
+                          }}
+                        />
+                        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+                          <button type="button" onClick={commitAliasEdit} style={{ cursor: 'pointer' }}>
+                            Save
+                          </button>
+                          <button type="button" onClick={cancelAliasEdit} style={{ cursor: 'pointer' }}>
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
-                ))}
+                ) : null}
               </>
             ) : null}
           </div>
@@ -3290,6 +3766,58 @@ export function PlotPage() {
             </div>
           ) : (
             <div style={{ border: uiBorder }}>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  gap: '0.75rem',
+                  flexWrap: 'wrap',
+                  padding: '0.5rem 0.75rem',
+                  borderBottom: uiBorder,
+                  background: 'rgb(from var(--card) r g b)',
+                  fontSize: '0.9rem',
+                }}
+              >
+                <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                  <span>
+                    Traces: {visibleDatasetIds.length}
+                    {derivedTraces.some((t) => t.visible) ? ` + ${derivedTraces.filter((t) => t.visible).length} derived` : ''}
+                  </span>
+                  <span>
+                    Axes: x ({xUnitLabel}), y ({formatUnit(unitHints.y)})
+                  </span>
+                  <span>
+                    View:{' '}
+                    {viewRange.x0 != null && viewRange.x1 != null
+                      ? `x ${formatHoverNumber(viewRange.x0)}–${formatHoverNumber(viewRange.x1)}`
+                      : 'x auto'}
+                    {viewRange.y0 != null && viewRange.y1 != null
+                      ? `, y ${formatHoverNumber(viewRange.y0)}–${formatHoverNumber(viewRange.y1)}`
+                      : ', y auto'}
+                  </span>
+                  <span>
+                    {fastViewEnabled
+                      ? anyDecimated
+                        ? 'View-decimated'
+                        : 'Fast view'
+                      : 'Full view'}
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  aria-label="Reset view"
+                  onClick={() => {
+                    setPlotUiRevision(makeId('uirev'))
+                    setPlotlyRelayout({})
+                  }}
+                  style={{ cursor: 'pointer' }}
+                >
+                  Reset view
+                </button>
+              </div>
+
               <PlotErrorBoundary>
                 <PlotComponent
                   data={plotData}

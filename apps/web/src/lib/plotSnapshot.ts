@@ -48,6 +48,14 @@ export type PlotSnapshotV1 = {
     filter: string
     plotlyRelayout: Record<string, unknown> | null
 
+    // CAP-03 overlay/trace management UI state (optional for backward-compatible restore)
+    fastViewEnabled?: boolean
+    detailedTooltips?: boolean
+    collapsedDerived?: boolean
+    derivedExpanded?: boolean
+    aliasByDatasetId?: Record<string, string>
+    aliasByDerivedId?: Record<string, string>
+
     selectedTransformDatasetIds: string[]
     normMode: NormalizationMode
     normRangeX0: string
