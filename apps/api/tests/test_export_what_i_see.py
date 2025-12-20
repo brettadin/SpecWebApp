@@ -7,6 +7,7 @@ import zipfile
 
 from fastapi.testclient import TestClient
 
+from app.annotations import AnnotationCreatePoint, create_point_note
 from app.datasets import save_dataset
 from app.main import app
 
@@ -88,6 +89,7 @@ def test_export_what_i_see_includes_plot_state_and_traces(tmp_path) -> None:
     assert any(n.endswith("reports/reopen_instructions.md") for n in names)
     assert any(n.endswith("reports/citations.md") for n in names)
     assert any(n.endswith("reports/annotations.md") for n in names)
+    assert any(n.endswith("annotations/annotations.json") for n in names)
     assert any(n.endswith("data/plotted_traces.json") for n in names)
     assert any(n.endswith("data/plotted_traces.csv") for n in names)
     assert any(n.endswith("checksums/SHA256SUMS.txt") for n in names)
@@ -115,6 +117,16 @@ def test_export_what_i_see_includes_plot_state_and_traces(tmp_path) -> None:
     annotations_md = _zip_read_text(res.content, annotations_md_name)
     assert "# Annotations" in annotations_md
     assert "No annotations" in annotations_md
+
+    ann_name = [n for n in names if n.endswith("annotations/annotations.json")][0]
+    anns = _zip_read_json(res.content, ann_name)
+    assert anns == []
+
+    manifest_name = [n for n in names if n.endswith("MANIFEST.json")][0]
+    manifest = _zip_read_json(res.content, manifest_name)
+    assert manifest.get("includes", {}).get("annotations") is True
+    assert manifest.get("includes", {}).get("annotations_hidden_in_render") is False
+    assert manifest.get("paths", {}).get("annotations") == "annotations/annotations.json"
 
 
 def test_export_what_i_see_includes_citations_when_present(tmp_path) -> None:
@@ -178,3 +190,64 @@ def test_export_what_i_see_includes_citations_when_present(tmp_path) -> None:
     assert "https://example.test/ref" in citations_md
 
     assert any(n.endswith("reports/annotations.md") for n in names)
+
+
+def test_export_what_i_see_flags_annotations_hidden_in_render_when_toggle_off(tmp_path) -> None:
+    os.environ["SPECTRA_DATA_DIR"] = str(tmp_path)
+
+    parsed = {
+        "name": "Local",
+        "created_at": "2025-12-16T00:00:00Z",
+        "source_file_name": "local.csv",
+        "sha256": "",
+        "parser": "test",
+        "parser_decisions": {},
+        "x_unit": "nm",
+        "y_unit": "arb",
+        "x": [1.0, 2.0, 3.0],
+        "y": [10.0, 20.0, 30.0],
+        "x_count": 3,
+        "warnings": [],
+    }
+    detail = save_dataset(
+        name="Local", source_file_name="local.csv", raw=b"x,y\n1,10\n", parsed=parsed
+    )
+
+    # Create a dataset annotation so the export has non-empty annotations.
+    _ = create_point_note(detail.id, AnnotationCreatePoint(text="note", x=2.0, y=20.0))
+
+    client = TestClient(app)
+    payload = {
+        "export_name": "plot",
+        "plot_state": {
+            "display_x_unit": "nm",
+            "show_annotations": False,
+        },
+        "traces": [
+            {
+                "trace_id": f"o:{detail.id}",
+                "label": "Local",
+                "trace_kind": "original",
+                "dataset_id": detail.id,
+                "x": [1.0, 2.0, 3.0],
+                "y": [10.0, 20.0, 30.0],
+                "x_unit": "nm",
+                "y_unit": "arb",
+                "provenance": [],
+            }
+        ],
+    }
+
+    res = client.post("/exports/what-i-see.zip", json=payload)
+    assert res.status_code == 200
+
+    names = _zip_names(res.content)
+    ann_name = [n for n in names if n.endswith("annotations/annotations.json")][0]
+    anns = _zip_read_json(res.content, ann_name)
+    assert isinstance(anns, list)
+    assert len(anns) >= 1
+
+    manifest_name = [n for n in names if n.endswith("MANIFEST.json")][0]
+    manifest = _zip_read_json(res.content, manifest_name)
+    assert manifest.get("includes", {}).get("annotations") is True
+    assert manifest.get("includes", {}).get("annotations_hidden_in_render") is True

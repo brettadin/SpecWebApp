@@ -259,6 +259,21 @@ function nowIso() {
   return new Date().toISOString()
 }
 
+function extractShapeXEdits(relayout: Record<string, unknown> | null): Array<{ shapeIndex: number; key: 'x0' | 'x1'; value: number }> {
+  if (!relayout) return []
+  const out: Array<{ shapeIndex: number; key: 'x0' | 'x1'; value: number }> = []
+  for (const [k, v] of Object.entries(relayout)) {
+    const m = /^shapes\[(\d+)\]\.(x0|x1)$/.exec(k)
+    if (!m) continue
+    const shapeIndex = Number(m[1])
+    if (!Number.isInteger(shapeIndex) || shapeIndex < 0) continue
+    const value = typeof v === 'number' ? v : Number(v)
+    if (!Number.isFinite(value)) continue
+    out.push({ shapeIndex, key: m[2] as 'x0' | 'x1', value })
+  }
+  return out
+}
+
 function makeTimestampForFilename(d: Date) {
   // e.g. 2025-12-17T21-08-50Z
   return d
@@ -336,6 +351,8 @@ export function PlotPage() {
   const [newRangeX1, setNewRangeX1] = useState('')
   const [newRangeText, setNewRangeText] = useState('')
 
+  const [annotationToolMode, setAnnotationToolMode] = useState<'none' | 'range-select'>('none')
+
   const [featureBusy, setFeatureBusy] = useState(false)
   const [featureError, setFeatureError] = useState<string | null>(null)
   const [featureTraceKeys, setFeatureTraceKeys] = useState<string[]>([])
@@ -399,6 +416,29 @@ export function PlotPage() {
   const [exportBusy, setExportBusy] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
   const [plotlyRelayout, setPlotlyRelayout] = useState<Record<string, unknown> | null>(null)
+
+  type RangeHighlightShapeRef = {
+    shapeIndex: number
+    datasetId: string
+    annotationId: string
+    canonicalUnit: string | null
+  }
+
+  const rangeHighlightShapeRefsRef = useRef<RangeHighlightShapeRef[]>([])
+  const annotationsByDatasetIdRef = useRef<Record<string, Annotation[]>>({})
+  const rangeHighlightEditsRef = useRef<{
+    timer: number | null
+    pending: Record<
+      string,
+      {
+        datasetId: string
+        annotationId: string
+        canonicalUnit: string | null
+        x0Display?: number
+        x1Display?: number
+      }
+    >
+  }>({ timer: null, pending: {} })
 
   // CAP-03: preserve zoom/pan state across trace changes; allow explicit reset.
   const [plotUiRevision, setPlotUiRevision] = useState(() => 'spectra-plot')
@@ -478,6 +518,36 @@ export function PlotPage() {
     [newAnnotationDatasetId, visibleDatasetIds],
   )
 
+  const onPlotSelected = useCallback(
+    (e: unknown) => {
+      if (annotationToolMode !== 'range-select') return
+
+      const ev = e as { points?: Array<{ x?: unknown; data?: unknown }> } | null
+      const pts = Array.isArray(ev?.points) ? ev?.points : []
+      if (!pts.length) return
+
+      const xs = pts
+        .map((p) => (typeof p.x === 'number' && Number.isFinite(p.x) ? p.x : null))
+        .filter((v): v is number => v != null)
+      if (!xs.length) return
+
+      const first = pts[0]
+      const datasetId = (first?.data as { meta?: { datasetId?: unknown } } | null)?.meta?.datasetId
+      if (typeof datasetId !== 'string' || !datasetId) return
+
+      const lo = Math.min(...xs)
+      const hi = Math.max(...xs)
+      if (!Number.isFinite(lo) || !Number.isFinite(hi) || lo === hi) return
+
+      setActiveInspectorTab('annotate')
+      setShowAnnotations(true)
+      setNewAnnotationDatasetId(datasetId)
+      setNewRangeX0(formatHoverNumber(lo))
+      setNewRangeX1(formatHoverNumber(hi))
+    },
+    [annotationToolMode],
+  )
+
   useEffect(() => {
     let cancelled = false
 
@@ -522,6 +592,10 @@ export function PlotPage() {
   useEffect(() => {
     seriesByIdRef.current = seriesById
   }, [seriesById])
+
+  useEffect(() => {
+    annotationsByDatasetIdRef.current = annotationsByDatasetId
+  }, [annotationsByDatasetId])
 
   const ensureSeriesLoaded = useCallback(async (datasetId: string): Promise<DatasetSeries> => {
     const cached = seriesByIdRef.current[datasetId]
@@ -1093,6 +1167,7 @@ export function PlotPage() {
           return {
             type: 'bar',
             name: displayName,
+            meta: { datasetId: t.id },
             x,
             y,
             hovertemplate: hoverTemplateFor({
@@ -1112,6 +1187,7 @@ export function PlotPage() {
           type: 'scatter',
           mode: 'lines',
           name: displayName,
+          meta: { datasetId: t.id },
           x,
           y,
           line: { dash },
@@ -1276,40 +1352,67 @@ export function PlotPage() {
   const plotData = plotBundle.data as PlotParams['data']
   const anyDecimated = plotBundle.anyDecimated
 
-  const plotLayout = useMemo<PlotParams['layout']>(() => {
+  const rangeHighlightShapesBundle = useMemo(() => {
     const shapes: NonNullable<PlotParams['layout']>['shapes'] = []
+    const refs: RangeHighlightShapeRef[] = []
 
-    if (showAnnotations) {
-      const textNeedle = annotationFilterText.trim().toLowerCase()
-      const authorNeedle = annotationFilterAuthor.trim().toLowerCase()
-      for (const t of activeSeries) {
-        if (annotationVisibilityByDatasetId[t.id] === false) continue
-        if (annotationFilterDatasetId && t.id !== annotationFilterDatasetId) continue
-        const anns = annotationsByDatasetId[t.id] ?? []
-        const s = t.series as DatasetSeries | undefined
-        const canonicalUnit = s?.x_unit ?? unitHints.x
-        for (const a of anns) {
-          if (annotationFilterType === 'point') continue
-          if (annotationFilterType === 'other' && (a.type === 'point' || a.type === 'range_x')) continue
-          if (annotationFilterType === 'range_x' && a.type !== 'range_x') continue
-          if (authorNeedle && !a.author_user_id.toLowerCase().includes(authorNeedle)) continue
-          if (textNeedle && !a.text.toLowerCase().includes(textNeedle)) continue
-          if (a.type !== 'range_x') continue
-          if (a.x0 == null || a.x1 == null) continue
-          shapes.push({
-            type: 'rect',
-            xref: 'x',
-            yref: 'paper',
-            x0: convertXScalarFromCanonical(a.x0, canonicalUnit, displayXUnit),
-            x1: convertXScalarFromCanonical(a.x1, canonicalUnit, displayXUnit),
-            y0: 0,
-            y1: 1,
-            line: { width: 1, color: '#e5e7eb' },
-            fillcolor: `rgba(229,231,235,${Math.max(0, Math.min(1, annotationHighlightOpacity))})`,
-          })
-        }
+    if (!showAnnotations) return { shapes, refs }
+
+    const textNeedle = annotationFilterText.trim().toLowerCase()
+    const authorNeedle = annotationFilterAuthor.trim().toLowerCase()
+    for (const t of activeSeries) {
+      if (annotationVisibilityByDatasetId[t.id] === false) continue
+      if (annotationFilterDatasetId && t.id !== annotationFilterDatasetId) continue
+      const anns = annotationsByDatasetId[t.id] ?? []
+      const s = t.series as DatasetSeries | undefined
+      const canonicalUnit = s?.x_unit ?? unitHints.x
+      for (const a of anns) {
+        if (annotationFilterType === 'point') continue
+        if (annotationFilterType === 'other' && (a.type === 'point' || a.type === 'range_x')) continue
+        if (annotationFilterType === 'range_x' && a.type !== 'range_x') continue
+        if (authorNeedle && !a.author_user_id.toLowerCase().includes(authorNeedle)) continue
+        if (textNeedle && !a.text.toLowerCase().includes(textNeedle)) continue
+        if (a.type !== 'range_x') continue
+        if (a.x0 == null || a.x1 == null) continue
+
+        const shapeIndex = shapes.length
+        shapes.push({
+          type: 'rect',
+          xref: 'x',
+          yref: 'paper',
+          x0: convertXScalarFromCanonical(a.x0, canonicalUnit, displayXUnit),
+          x1: convertXScalarFromCanonical(a.x1, canonicalUnit, displayXUnit),
+          y0: 0,
+          y1: 1,
+          line: { width: 1, color: '#e5e7eb' },
+          fillcolor: `rgba(229,231,235,${Math.max(0, Math.min(1, annotationHighlightOpacity))})`,
+          editable: true,
+        })
+        refs.push({ shapeIndex, datasetId: t.id, annotationId: a.annotation_id, canonicalUnit: canonicalUnit ?? null })
       }
     }
+
+    return { shapes, refs }
+  }, [
+    activeSeries,
+    annotationFilterAuthor,
+    annotationFilterDatasetId,
+    annotationFilterText,
+    annotationFilterType,
+    annotationHighlightOpacity,
+    annotationVisibilityByDatasetId,
+    annotationsByDatasetId,
+    displayXUnit,
+    showAnnotations,
+    unitHints.x,
+  ])
+
+  useEffect(() => {
+    rangeHighlightShapeRefsRef.current = rangeHighlightShapesBundle.refs
+  }, [rangeHighlightShapesBundle.refs])
+
+  const plotLayout = useMemo<PlotParams['layout']>(() => {
+    const shapes = rangeHighlightShapesBundle.shapes
 
     const xName = axisNameHints.xCol ? String(axisNameHints.xCol) : 'X'
     const yName = axisNameHints.yCol ? String(axisNameHints.yCol) : 'Y'
@@ -1325,25 +1428,27 @@ export function PlotPage() {
       legend: { orientation: 'h' },
       shapes,
       uirevision: plotUiRevision,
+      dragmode: annotationToolMode === 'range-select' ? 'select' : 'zoom',
+      selectdirection: annotationToolMode === 'range-select' ? 'h' : undefined,
     }
   }, [
-    activeSeries,
-    annotationFilterAuthor,
-    annotationFilterDatasetId,
-    annotationFilterText,
-    annotationFilterType,
-    annotationHighlightOpacity,
-    annotationVisibilityByDatasetId,
-    annotationsByDatasetId,
+    annotationToolMode,
     axisNameHints.xCol,
     axisNameHints.yCol,
-    displayXUnit,
     plotUiRevision,
-    showAnnotations,
-    unitHints.x,
     unitHints.y,
     xUnitLabel,
+    rangeHighlightShapesBundle.shapes,
   ])
+
+  const plotConfig = useMemo(() => {
+    return {
+      displaylogo: false,
+      responsive: true,
+      editable: showAnnotations,
+      edits: { shapePosition: showAnnotations },
+    }
+  }, [showAnnotations])
 
   const visibleAnnotations = useMemo(() => {
     if (!showAnnotations) return []
@@ -1638,12 +1743,12 @@ export function PlotPage() {
     }
   }
 
-  async function refreshAnnotations(datasetId: string) {
+  const refreshAnnotations = useCallback(async (datasetId: string) => {
     const res = await fetch(`${API_BASE}/datasets/${encodeURIComponent(datasetId)}/annotations`)
     if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`)
     const json = (await res.json()) as Annotation[]
     setAnnotationsByDatasetId((prev) => ({ ...prev, [datasetId]: json }))
-  }
+  }, [])
 
   async function onAddPoint() {
     if (!newAnnotationDatasetId) return
@@ -1746,34 +1851,111 @@ export function PlotPage() {
     }
   }
 
-  async function onUpdateAnnotation(
-    datasetId: string,
-    annotationId: string,
-    patch: { text?: string; x0?: number; x1?: number; y0?: number; y1?: number },
-  ) {
-    setError(null)
-    try {
-      const res = await fetch(
-        `${API_BASE}/datasets/${encodeURIComponent(datasetId)}/annotations/${encodeURIComponent(annotationId)}`,
-        {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(patch),
-        },
-      )
-      if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`)
-      await refreshAnnotations(datasetId)
+  const onUpdateAnnotation = useCallback(
+    async (
+      datasetId: string,
+      annotationId: string,
+      patch: { text?: string; x0?: number; x1?: number; y0?: number; y1?: number },
+    ) => {
+      setError(null)
+      try {
+        const res = await fetch(
+          `${API_BASE}/datasets/${encodeURIComponent(datasetId)}/annotations/${encodeURIComponent(annotationId)}`,
+          {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(patch),
+          },
+        )
+        if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`)
+        await refreshAnnotations(datasetId)
 
-      void logSessionEvent({
-        type: 'annotation.update',
-        message: `Updated annotation`,
-        payload: { dataset_id: datasetId, annotation_id: annotationId },
-      })
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-      throw e
-    }
-  }
+        void logSessionEvent({
+          type: 'annotation.update',
+          message: `Updated annotation`,
+          payload: { dataset_id: datasetId, annotation_id: annotationId },
+        })
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e))
+        throw e
+      }
+    },
+    [refreshAnnotations],
+  )
+
+  const onPlotRelayout = useCallback(
+    (e: unknown) => {
+      const relayout = e as Record<string, unknown>
+      setPlotlyRelayout(relayout)
+
+      if (!showAnnotations) return
+
+      const edits = extractShapeXEdits(relayout)
+      if (!edits.length) return
+
+      const refs = rangeHighlightShapeRefsRef.current
+      for (const edit of edits) {
+        const ref = refs.find((r) => r.shapeIndex === edit.shapeIndex)
+        if (!ref) continue
+
+        const key = `${ref.datasetId}:${ref.annotationId}`
+        const pending = rangeHighlightEditsRef.current.pending[key] ?? {
+          datasetId: ref.datasetId,
+          annotationId: ref.annotationId,
+          canonicalUnit: ref.canonicalUnit,
+        }
+        if (edit.key === 'x0') pending.x0Display = edit.value
+        if (edit.key === 'x1') pending.x1Display = edit.value
+        rangeHighlightEditsRef.current.pending[key] = pending
+      }
+
+      if (rangeHighlightEditsRef.current.timer != null) {
+        window.clearTimeout(rangeHighlightEditsRef.current.timer)
+      }
+
+      rangeHighlightEditsRef.current.timer = window.setTimeout(() => {
+        const batch = rangeHighlightEditsRef.current.pending
+        rangeHighlightEditsRef.current.pending = {}
+        rangeHighlightEditsRef.current.timer = null
+
+        void (async () => {
+          const entries = Object.values(batch)
+          for (const item of entries) {
+            const anns = annotationsByDatasetIdRef.current[item.datasetId] ?? []
+            const current = anns.find((a) => a.annotation_id === item.annotationId)
+            if (!current || current.type !== 'range_x') continue
+
+            if (displayXUnit !== 'as-imported' && !item.canonicalUnit) {
+              setError('X unit is unknown for this dataset; cannot convert dragged highlight coordinates.')
+              continue
+            }
+
+            const toCanonical = (xDisplay: number) =>
+              item.canonicalUnit ? convertXScalarToCanonical(xDisplay, item.canonicalUnit, displayXUnit) : xDisplay
+            const toDisplay = (xCanonical: number) =>
+              item.canonicalUnit ? convertXScalarFromCanonical(xCanonical, item.canonicalUnit, displayXUnit) : xCanonical
+
+            const x0Display = item.x0Display ?? (current.x0 != null ? toDisplay(current.x0) : null)
+            const x1Display = item.x1Display ?? (current.x1 != null ? toDisplay(current.x1) : null)
+            if (x0Display == null || x1Display == null) continue
+
+            const x0Canonical = toCanonical(x0Display)
+            const x1Canonical = toCanonical(x1Display)
+            const lo = Math.min(x0Canonical, x1Canonical)
+            const hi = Math.max(x0Canonical, x1Canonical)
+            if (!Number.isFinite(lo) || !Number.isFinite(hi) || lo === hi) continue
+
+            try {
+              await onUpdateAnnotation(item.datasetId, item.annotationId, { x0: lo, x1: hi })
+            } catch {
+              // onUpdateAnnotation already reports errors.
+            }
+          }
+        })()
+      }, 250)
+    },
+    [displayXUnit, onUpdateAnnotation, showAnnotations],
+  )
 
   async function onSaveEditingAnnotation() {
     if (!editingAnnotation) return
@@ -3844,6 +4026,17 @@ export function PlotPage() {
           </label>
         </div>
 
+        <div style={{ marginTop: '0.5rem' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <input
+              type="checkbox"
+              checked={annotationToolMode === 'range-select'}
+              onChange={(e) => setAnnotationToolMode(e.target.checked ? 'range-select' : 'none')}
+            />
+            Drag-select X-range on plot
+          </label>
+        </div>
+
         {showAnnotations && visibleDatasetIds.length ? (
           <div style={{ marginTop: '0.5rem' }}>
             <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Show annotations on</div>
@@ -4225,9 +4418,10 @@ export function PlotPage() {
                 <PlotComponent
                   data={plotData}
                   layout={plotLayout}
-                  config={{ displaylogo: false, responsive: true }}
+                  config={plotConfig}
                   onClick={onPlotClick}
-                  onRelayout={(e: unknown) => setPlotlyRelayout(e as Record<string, unknown>)}
+                  onSelected={onPlotSelected}
+                  onRelayout={onPlotRelayout}
                   style={{ width: '100%', height: '520px' }}
                 />
               </PlotErrorBoundary>

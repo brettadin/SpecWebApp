@@ -6,7 +6,8 @@ import { PlotPage } from './PlotPage'
 
 vi.mock('react-plotly.js', () => {
   return {
-    default: (props: { data?: unknown; layout?: unknown }) => {
+    default: (props: { data?: unknown; layout?: unknown } & Record<string, unknown>) => {
+      ;(globalThis as unknown as { __lastPlotlyProps?: unknown }).__lastPlotlyProps = props
       const traces = Array.isArray(props.data) ? props.data : []
       return (
         <div
@@ -146,6 +147,110 @@ describe('PlotPage (CAP-03)', () => {
       expect(Array.isArray(layout.shapes)).toBe(true)
       expect(layout.shapes.length).toBeGreaterThan(0)
     })
+  })
+
+  it('persists dragged range highlight endpoint edits (CAP-04)', async () => {
+    let annotationFetchCount = 0
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit): Promise<MockResponse> => {
+      if (url.endsWith('/datasets')) {
+        return {
+          ok: true,
+          json: async () => [
+            {
+              id: 'ds-1',
+              name: 'My dataset',
+              created_at: '2025-12-16T00:00:00Z',
+              source_file_name: 'a.csv',
+              sha256: 'x',
+            },
+          ],
+        }
+      }
+
+      if (url.includes('/datasets/ds-1/data')) {
+        return {
+          ok: true,
+          json: async () => ({ id: 'ds-1', x: [1, 2, 3], y: [10, 20, 30], x_unit: 'nm', y_unit: 'arb' }),
+        }
+      }
+
+      if (url.includes('/datasets/ds-1/annotations/a1') && init?.method === 'PUT') {
+        return { ok: true, json: async () => ({ ok: true }) }
+      }
+
+      if (url.includes('/datasets/ds-1/annotations')) {
+        annotationFetchCount += 1
+        // First fetch returns original endpoints; second fetch returns updated endpoints.
+        const x0 = annotationFetchCount >= 2 ? 1.7 : 1.5
+        const x1 = annotationFetchCount >= 2 ? 2.7 : 2.5
+        return {
+          ok: true,
+          json: async () => [
+            {
+              annotation_id: 'a1',
+              dataset_id: 'ds-1',
+              type: 'range_x',
+              text: 'band',
+              author_user_id: 'local/anonymous',
+              created_at: '2025-12-16T00:00:00Z',
+              updated_at: '2025-12-16T00:00:00Z',
+              x_unit: 'nm',
+              y_unit: 'arb',
+              x0,
+              x1,
+              y0: null,
+              y1: null,
+            },
+          ],
+        }
+      }
+
+      return { ok: false, status: 404, text: async () => 'not found' }
+    })
+
+    vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch)
+
+    render(
+      <MemoryRouter initialEntries={['/plot']}>
+        <PlotPage />
+      </MemoryRouter>,
+    )
+
+    await screen.findByText('My dataset')
+    fireEvent.click(screen.getByLabelText('Toggle My dataset'))
+
+    // Enable annotations (loads shapes)
+    fireEvent.click(screen.getByLabelText('Show annotations'))
+
+    await waitFor(() => {
+      const plot = screen.getByTestId('plotly')
+      const layout = JSON.parse(plot.getAttribute('data-layout') || '{}')
+      expect(Array.isArray(layout.shapes)).toBe(true)
+      expect(layout.shapes.length).toBeGreaterThan(0)
+    })
+
+    const props = (globalThis as unknown as { __lastPlotlyProps?: unknown }).__lastPlotlyProps as
+      | { onRelayout?: (e: unknown) => void }
+      | undefined
+
+    expect(typeof props?.onRelayout).toBe('function')
+
+    // Simulate dragging the highlight endpoints.
+    props?.onRelayout?.({ 'shapes[0].x0': 1.7, 'shapes[0].x1': 2.7 })
+
+    // Debounce delay in PlotPage is 250ms.
+    await new Promise((r) => setTimeout(r, 350))
+
+    await waitFor(() => {
+      const putCalls = fetchMock.mock.calls.filter((c) => String(c[0]).includes('/datasets/ds-1/annotations/a1'))
+      expect(putCalls.length).toBeGreaterThan(0)
+      const [, init] = putCalls[0]
+      expect(init?.method).toBe('PUT')
+      const body = init?.body ? JSON.parse(String(init.body)) : {}
+      expect(body.x0).toBeCloseTo(1.7)
+      expect(body.x1).toBeCloseTo(2.7)
+    })
+
   })
 
   it('computes A-B differential and adds a derived trace', async () => {

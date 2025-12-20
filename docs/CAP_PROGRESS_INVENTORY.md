@@ -140,7 +140,7 @@ This is a repo-wide inventory mapping each CAP spec in `docs/CAPS/` to the curre
 - API tests: `apps/api/tests/test_annotations.py`
 
 **Not yet / gaps vs full CAP**
-- Drag-to-select range creation + interactive handle-dragging for endpoints.
+- Interactive handle-dragging for range endpoints (plot-side) for `range_x` highlights.
 - Rich annotation types (range_y, dataset_note, reference_marker) and tag/style/link fields.
 - Permissions enforcement beyond local-first assumptions.
 - Export contract details: marking annotations as hidden_in_render when exported with annotations toggled off.
