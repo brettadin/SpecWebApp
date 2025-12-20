@@ -289,6 +289,17 @@ export function PlotPage() {
   const [annotationsByDatasetId, setAnnotationsByDatasetId] = useState<Record<string, Annotation[]>>({})
   const [filter, setFilter] = useState('')
   const [showAnnotations, setShowAnnotations] = useState(false)
+  const [annotationVisibilityByDatasetId, setAnnotationVisibilityByDatasetId] = useState<Record<string, boolean>>({})
+  const [annotationFilterDatasetId, setAnnotationFilterDatasetId] = useState('')
+  const [annotationFilterType, setAnnotationFilterType] = useState<'all' | 'point' | 'range_x' | 'other'>('all')
+  const [annotationFilterText, setAnnotationFilterText] = useState('')
+  const [annotationFilterAuthor, setAnnotationFilterAuthor] = useState('')
+  const [annotationHighlightOpacity, setAnnotationHighlightOpacity] = useState(0.25)
+  const [editingAnnotation, setEditingAnnotation] = useState<{ datasetId: string; annotationId: string } | null>(null)
+  const [editingAnnotationText, setEditingAnnotationText] = useState('')
+  const [editingAnnotationX0, setEditingAnnotationX0] = useState('')
+  const [editingAnnotationX1, setEditingAnnotationX1] = useState('')
+  const [editingAnnotationY0, setEditingAnnotationY0] = useState('')
 
   type InspectorTab = 'traces' | 'analyze' | 'annotate' | 'export'
   const [activeInspectorTab, setActiveInspectorTab] = useState<InspectorTab>('traces')
@@ -428,6 +439,22 @@ export function PlotPage() {
     () => traceStates.filter((t) => t.visible).map((t) => t.datasetId),
     [traceStates],
   )
+
+  useEffect(() => {
+    // CAP-04: default per-dataset annotation visibility to on.
+    if (!visibleDatasetIds.length) return
+    setAnnotationVisibilityByDatasetId((prev) => {
+      let changed = false
+      const next: Record<string, boolean> = { ...prev }
+      for (const id of visibleDatasetIds) {
+        if (next[id] == null) {
+          next[id] = true
+          changed = true
+        }
+      }
+      return changed ? next : prev
+    })
+  }, [visibleDatasetIds])
 
   const onPlotClick = useCallback(
     (e: unknown) => {
@@ -1186,10 +1213,22 @@ export function PlotPage() {
 
     if (!showAnnotations) return { data: [...traces, ...derived, ...featureTraces], anyDecimated }
 
+    const noteTextNeedle = annotationFilterText.trim().toLowerCase()
+    const noteAuthorNeedle = annotationFilterAuthor.trim().toLowerCase()
+
     const noteTraces = activeSeries
       .map((t) => {
+        if (annotationVisibilityByDatasetId[t.id] === false) return null
+        if (annotationFilterDatasetId && t.id !== annotationFilterDatasetId) return null
+        if (annotationFilterType === 'range_x' || annotationFilterType === 'other') return null
         const anns = annotationsByDatasetId[t.id] ?? []
-        const points = anns.filter((a) => a.type === 'point' && a.x0 != null)
+        const points = anns.filter((a) => {
+          if (a.type !== 'point') return false
+          if (a.x0 == null) return false
+          if (noteAuthorNeedle && !a.author_user_id.toLowerCase().includes(noteAuthorNeedle)) return false
+          if (noteTextNeedle && !a.text.toLowerCase().includes(noteTextNeedle)) return false
+          return true
+        })
         if (!points.length) return null
         const displayName = `${t.meta?.name || t.id} (notes)`
 
@@ -1214,6 +1253,11 @@ export function PlotPage() {
     activeSeries,
     aliasByDatasetId,
     aliasByDerivedId,
+    annotationFilterAuthor,
+    annotationFilterDatasetId,
+    annotationFilterText,
+    annotationFilterType,
+    annotationVisibilityByDatasetId,
     annotationsByDatasetId,
     datasets,
     derivedTraces,
@@ -1236,11 +1280,20 @@ export function PlotPage() {
     const shapes: NonNullable<PlotParams['layout']>['shapes'] = []
 
     if (showAnnotations) {
+      const textNeedle = annotationFilterText.trim().toLowerCase()
+      const authorNeedle = annotationFilterAuthor.trim().toLowerCase()
       for (const t of activeSeries) {
+        if (annotationVisibilityByDatasetId[t.id] === false) continue
+        if (annotationFilterDatasetId && t.id !== annotationFilterDatasetId) continue
         const anns = annotationsByDatasetId[t.id] ?? []
         const s = t.series as DatasetSeries | undefined
         const canonicalUnit = s?.x_unit ?? unitHints.x
         for (const a of anns) {
+          if (annotationFilterType === 'point') continue
+          if (annotationFilterType === 'other' && (a.type === 'point' || a.type === 'range_x')) continue
+          if (annotationFilterType === 'range_x' && a.type !== 'range_x') continue
+          if (authorNeedle && !a.author_user_id.toLowerCase().includes(authorNeedle)) continue
+          if (textNeedle && !a.text.toLowerCase().includes(textNeedle)) continue
           if (a.type !== 'range_x') continue
           if (a.x0 == null || a.x1 == null) continue
           shapes.push({
@@ -1252,7 +1305,7 @@ export function PlotPage() {
             y0: 0,
             y1: 1,
             line: { width: 1, color: '#e5e7eb' },
-            fillcolor: 'rgba(229,231,235,0.25)',
+            fillcolor: `rgba(229,231,235,${Math.max(0, Math.min(1, annotationHighlightOpacity))})`,
           })
         }
       }
@@ -1273,20 +1326,56 @@ export function PlotPage() {
       shapes,
       uirevision: plotUiRevision,
     }
-  }, [activeSeries, annotationsByDatasetId, axisNameHints.xCol, axisNameHints.yCol, displayXUnit, plotUiRevision, showAnnotations, unitHints.x, unitHints.y, xUnitLabel])
+  }, [
+    activeSeries,
+    annotationFilterAuthor,
+    annotationFilterDatasetId,
+    annotationFilterText,
+    annotationFilterType,
+    annotationHighlightOpacity,
+    annotationVisibilityByDatasetId,
+    annotationsByDatasetId,
+    axisNameHints.xCol,
+    axisNameHints.yCol,
+    displayXUnit,
+    plotUiRevision,
+    showAnnotations,
+    unitHints.x,
+    unitHints.y,
+    xUnitLabel,
+  ])
 
   const visibleAnnotations = useMemo(() => {
     if (!showAnnotations) return []
     const out: Array<{ datasetId: string; datasetName: string; ann: Annotation }> = []
     for (const datasetId of visibleDatasetIds) {
+      if (annotationVisibilityByDatasetId[datasetId] === false) continue
+      if (annotationFilterDatasetId && datasetId !== annotationFilterDatasetId) continue
       const meta = datasetsById.get(datasetId)
       const datasetName = meta?.name ?? datasetId
       for (const ann of annotationsByDatasetId[datasetId] ?? []) {
+        if (annotationFilterType === 'point' && ann.type !== 'point') continue
+        if (annotationFilterType === 'range_x' && ann.type !== 'range_x') continue
+        if (annotationFilterType === 'other' && (ann.type === 'point' || ann.type === 'range_x')) continue
+        if (annotationFilterAuthor && !ann.author_user_id.toLowerCase().includes(annotationFilterAuthor.toLowerCase())) {
+          continue
+        }
+        if (annotationFilterText && !ann.text.toLowerCase().includes(annotationFilterText.toLowerCase())) continue
         out.push({ datasetId, datasetName, ann })
       }
     }
     return out
-  }, [showAnnotations, visibleDatasetIds, annotationsByDatasetId, datasetsById])
+  }, [
+    showAnnotations,
+    visibleDatasetIds,
+    annotationsByDatasetId,
+    datasetsById,
+    annotationVisibilityByDatasetId,
+    annotationFilterDatasetId,
+    annotationFilterType,
+    annotationFilterAuthor,
+    annotationFilterText,
+  ])
 
   useEffect(() => {
     // Pick a sensible default dataset for creating annotations.
@@ -1558,15 +1647,22 @@ export function PlotPage() {
 
   async function onAddPoint() {
     if (!newAnnotationDatasetId) return
-    const x = Number(newPointX)
-    if (!Number.isFinite(x)) return
+    const xDisplay = Number(newPointX)
+    if (!Number.isFinite(xDisplay)) return
 
-    const body: { text: string; x: number; y?: number } = { text: newPointText.trim(), x }
-    const y = newPointY.trim() === '' ? null : Number(newPointY)
-    if (y != null && Number.isFinite(y)) body.y = y
-
-    setError(null)
     try {
+      const s = await ensureSeriesLoaded(newAnnotationDatasetId)
+      const canonicalUnit = s.x_unit ?? null
+      if (displayXUnit !== 'as-imported' && !canonicalUnit) {
+        throw new Error('X unit is unknown for this dataset; cannot convert annotation coordinates.')
+      }
+      const xCanonical = canonicalUnit ? convertXScalarToCanonical(xDisplay, canonicalUnit, displayXUnit) : xDisplay
+
+      const body: { text: string; x: number; y?: number } = { text: newPointText.trim(), x: xCanonical }
+      const y = newPointY.trim() === '' ? null : Number(newPointY)
+      if (y != null && Number.isFinite(y)) body.y = y
+
+      setError(null)
       const res = await fetch(
         `${API_BASE}/datasets/${encodeURIComponent(newAnnotationDatasetId)}/annotations/point`,
         {
@@ -1585,7 +1681,15 @@ export function PlotPage() {
       void logSessionEvent({
         type: 'annotation.add_point',
         message: `Added point annotation`,
-        payload: { dataset_id: newAnnotationDatasetId, x, y: body.y ?? null, text: body.text },
+        payload: {
+          dataset_id: newAnnotationDatasetId,
+          x_display: xDisplay,
+          display_x_unit: displayXUnit,
+          x_canonical: xCanonical,
+          canonical_x_unit: canonicalUnit,
+          y: body.y ?? null,
+          text: body.text,
+        },
       })
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -1594,18 +1698,26 @@ export function PlotPage() {
 
   async function onAddRange() {
     if (!newAnnotationDatasetId) return
-    const x0 = Number(newRangeX0)
-    const x1 = Number(newRangeX1)
-    if (!Number.isFinite(x0) || !Number.isFinite(x1)) return
+    const x0Display = Number(newRangeX0)
+    const x1Display = Number(newRangeX1)
+    if (!Number.isFinite(x0Display) || !Number.isFinite(x1Display)) return
 
-    setError(null)
     try {
+      const s = await ensureSeriesLoaded(newAnnotationDatasetId)
+      const canonicalUnit = s.x_unit ?? null
+      if (displayXUnit !== 'as-imported' && !canonicalUnit) {
+        throw new Error('X unit is unknown for this dataset; cannot convert annotation coordinates.')
+      }
+      const x0Canonical = canonicalUnit ? convertXScalarToCanonical(x0Display, canonicalUnit, displayXUnit) : x0Display
+      const x1Canonical = canonicalUnit ? convertXScalarToCanonical(x1Display, canonicalUnit, displayXUnit) : x1Display
+
+      setError(null)
       const res = await fetch(
         `${API_BASE}/datasets/${encodeURIComponent(newAnnotationDatasetId)}/annotations/range-x`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: newRangeText.trim(), x0, x1 }),
+          body: JSON.stringify({ text: newRangeText.trim(), x0: x0Canonical, x1: x1Canonical }),
         },
       )
       if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`)
@@ -1618,14 +1730,105 @@ export function PlotPage() {
       void logSessionEvent({
         type: 'annotation.add_range_x',
         message: `Added X-range highlight`,
-        payload: { dataset_id: newAnnotationDatasetId, x0, x1, text: newRangeText.trim() },
+        payload: {
+          dataset_id: newAnnotationDatasetId,
+          x0_display: x0Display,
+          x1_display: x1Display,
+          display_x_unit: displayXUnit,
+          x0_canonical: x0Canonical,
+          x1_canonical: x1Canonical,
+          canonical_x_unit: canonicalUnit,
+          text: newRangeText.trim(),
+        },
       })
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
   }
 
+  async function onUpdateAnnotation(
+    datasetId: string,
+    annotationId: string,
+    patch: { text?: string; x0?: number; x1?: number; y0?: number; y1?: number },
+  ) {
+    setError(null)
+    try {
+      const res = await fetch(
+        `${API_BASE}/datasets/${encodeURIComponent(datasetId)}/annotations/${encodeURIComponent(annotationId)}`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(patch),
+        },
+      )
+      if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`)
+      await refreshAnnotations(datasetId)
+
+      void logSessionEvent({
+        type: 'annotation.update',
+        message: `Updated annotation`,
+        payload: { dataset_id: datasetId, annotation_id: annotationId },
+      })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+      throw e
+    }
+  }
+
+  async function onSaveEditingAnnotation() {
+    if (!editingAnnotation) return
+    const nextText = editingAnnotationText.trim()
+    const { datasetId, annotationId } = editingAnnotation
+
+    const anns = annotationsByDatasetId[datasetId] ?? []
+    const current = anns.find((a) => a.annotation_id === annotationId)
+    if (!current) throw new Error('Annotation not found.')
+
+    const patch: { text?: string; x0?: number; x1?: number; y0?: number; y1?: number } = { text: nextText }
+
+    const x0DisplayRaw = editingAnnotationX0.trim()
+    const x1DisplayRaw = editingAnnotationX1.trim()
+    const y0Raw = editingAnnotationY0.trim()
+
+    if (x0DisplayRaw !== '' || x1DisplayRaw !== '') {
+      const s = await ensureSeriesLoaded(datasetId)
+      const canonicalUnit = s.x_unit ?? null
+      if (displayXUnit !== 'as-imported' && !canonicalUnit) {
+        throw new Error('X unit is unknown for this dataset; cannot convert annotation coordinates.')
+      }
+
+      if (x0DisplayRaw !== '') {
+        const x0Display = Number(x0DisplayRaw)
+        if (Number.isFinite(x0Display)) {
+          patch.x0 = canonicalUnit ? convertXScalarToCanonical(x0Display, canonicalUnit, displayXUnit) : x0Display
+        }
+      }
+      if (x1DisplayRaw !== '') {
+        const x1Display = Number(x1DisplayRaw)
+        if (Number.isFinite(x1Display)) {
+          patch.x1 = canonicalUnit ? convertXScalarToCanonical(x1Display, canonicalUnit, displayXUnit) : x1Display
+        }
+      }
+    }
+
+    if (current.type === 'point' && y0Raw !== '') {
+      const y0 = Number(y0Raw)
+      if (Number.isFinite(y0)) patch.y0 = y0
+    }
+
+    await onUpdateAnnotation(datasetId, annotationId, patch)
+    setEditingAnnotation(null)
+    setEditingAnnotationText('')
+    setEditingAnnotationX0('')
+    setEditingAnnotationX1('')
+    setEditingAnnotationY0('')
+  }
+
   async function onDeleteAnnotation(datasetId: string, annotationId: string) {
+    const datasetName = datasetsById.get(datasetId)?.name ?? datasetId
+    const ok = window.confirm(`Delete this annotation from “${datasetName}”?`)
+    if (!ok) return
+
     setError(null)
     try {
       const res = await fetch(
@@ -1634,6 +1837,11 @@ export function PlotPage() {
       )
       if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`)
       await refreshAnnotations(datasetId)
+
+      if (editingAnnotation?.datasetId === datasetId && editingAnnotation?.annotationId === annotationId) {
+        setEditingAnnotation(null)
+        setEditingAnnotationText('')
+      }
 
       void logSessionEvent({
         type: 'annotation.delete',
@@ -1842,8 +2050,11 @@ export function PlotPage() {
         const datasetId = f.dataset_id_for_annotation
         if (!datasetId) continue
 
-        const canonicalUnit = (await ensureSeriesLoaded(datasetId)).x_unit
-        const xCanonical = convertXScalarToCanonical(f.center_x, canonicalUnit, displayXUnit)
+        const canonicalUnit = (await ensureSeriesLoaded(datasetId)).x_unit ?? null
+        if (displayXUnit !== 'as-imported' && !canonicalUnit) {
+          throw new Error(`X unit is unknown for ${datasetId}; cannot convert annotation coordinates.`)
+        }
+        const xCanonical = canonicalUnit ? convertXScalarToCanonical(f.center_x, canonicalUnit, displayXUnit) : f.center_x
 
         const minProm = f.parameters.min_prominence
         const minSep = f.parameters.min_separation_x
@@ -2129,8 +2340,13 @@ export function PlotPage() {
         const top = m.candidates[0]
         if (!top) continue
 
-        const canonicalUnit = (await ensureSeriesLoaded(m.dataset_id_for_annotation)).x_unit
-        const xCanonical = convertXScalarToCanonical(m.feature_center_x_display, canonicalUnit, displayXUnit)
+        const canonicalUnit = (await ensureSeriesLoaded(m.dataset_id_for_annotation)).x_unit ?? null
+        if (displayXUnit !== 'as-imported' && !canonicalUnit) {
+          throw new Error(`X unit is unknown for ${m.dataset_id_for_annotation}; cannot convert annotation coordinates.`)
+        }
+        const xCanonical = canonicalUnit
+          ? convertXScalarToCanonical(m.feature_center_x_display, canonicalUnit, displayXUnit)
+          : m.feature_center_x_display
 
         const dxLabel = tol != null ? `Δx=±${tol} ${xUnitLabel}` : null
         const sourceLabel = srcUrl ? `${srcName} (${srcUrl})` : srcName
@@ -3628,6 +3844,46 @@ export function PlotPage() {
           </label>
         </div>
 
+        {showAnnotations && visibleDatasetIds.length ? (
+          <div style={{ marginTop: '0.5rem' }}>
+            <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Show annotations on</div>
+            <div style={{ display: 'grid', gap: '0.25rem' }}>
+              {visibleDatasetIds.map((id) => (
+                <label key={id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <input
+                    type="checkbox"
+                    checked={annotationVisibilityByDatasetId[id] !== false}
+                    onChange={(e) =>
+                      setAnnotationVisibilityByDatasetId((prev) => ({
+                        ...prev,
+                        [id]: e.target.checked,
+                      }))
+                    }
+                  />
+                  <span title={datasetsById.get(id)?.name ?? id} style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {datasetsById.get(id)?.name ?? id}
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {showAnnotations ? (
+          <div style={{ marginTop: '0.5rem' }}>
+            <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Highlight opacity</label>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={annotationHighlightOpacity}
+              onChange={(e) => setAnnotationHighlightOpacity(Number(e.target.value))}
+              style={{ width: '100%' }}
+            />
+          </div>
+        ) : null}
+
         <div style={{ marginTop: '0.5rem' }}>
           <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Add annotation to</label>
           <select
@@ -3689,16 +3945,163 @@ export function PlotPage() {
         {showAnnotations ? (
           <div style={{ marginTop: '0.75rem' }}>
             <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Visible annotations</div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '0.5rem' }}>
+              <div>
+                <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Dataset</label>
+                <select
+                  value={annotationFilterDatasetId}
+                  onChange={(e) => setAnnotationFilterDatasetId(e.target.value)}
+                  style={{ width: '100%' }}
+                >
+                  <option value="">(all visible)</option>
+                  {visibleDatasetIds.map((id) => (
+                    <option key={id} value={id}>
+                      {datasetsById.get(id)?.name ?? id}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Type</label>
+                <select
+                  value={annotationFilterType}
+                  onChange={(e) => setAnnotationFilterType(e.target.value as typeof annotationFilterType)}
+                  style={{ width: '100%' }}
+                >
+                  <option value="all">All</option>
+                  <option value="point">point</option>
+                  <option value="range_x">range_x</option>
+                  <option value="other">other</option>
+                </select>
+              </div>
+              <div>
+                <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Text</label>
+                <input
+                  value={annotationFilterText}
+                  onChange={(e) => setAnnotationFilterText(e.target.value)}
+                  placeholder="search text"
+                  style={{ width: '100%' }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Author</label>
+                <input
+                  value={annotationFilterAuthor}
+                  onChange={(e) => setAnnotationFilterAuthor(e.target.value)}
+                  placeholder="author id"
+                  style={{ width: '100%' }}
+                />
+              </div>
+            </div>
+
             {visibleAnnotations.length ? (
               <div style={{ display: 'grid', gap: '0.25rem' }}>
                 {visibleAnnotations.map(({ datasetId, datasetName, ann }) => (
-                  <div key={ann.annotation_id} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '0.5rem', alignItems: 'center' }}>
+                  <div
+                    key={ann.annotation_id}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr auto',
+                      gap: '0.5rem',
+                      alignItems: 'center',
+                      padding: '0.25rem 0',
+                      borderBottom: uiBorder,
+                    }}
+                  >
                     <div title={datasetName} style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      <strong>{ann.type}</strong> — {ann.text}
+                      <div style={{ fontWeight: 700 }}>
+                        {ann.type} <span style={{ fontWeight: 400, opacity: 0.8 }}>— {datasetName}</span>
+                      </div>
+                      {editingAnnotation?.datasetId === datasetId && editingAnnotation?.annotationId === ann.annotation_id ? (
+                        <input
+                          aria-label="Edit annotation text"
+                          value={editingAnnotationText}
+                          onChange={(e) => setEditingAnnotationText(e.target.value)}
+                          style={{ width: '100%', marginTop: '0.25rem' }}
+                        />
+                      ) : (
+                        <div style={{ marginTop: '0.25rem' }}>{ann.text}</div>
+                      )}
+
+                      {editingAnnotation?.datasetId === datasetId && editingAnnotation?.annotationId === ann.annotation_id ? (
+                        <div style={{ marginTop: '0.25rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                          <input
+                            aria-label="Edit annotation x0"
+                            placeholder={`x (${xUnitLabel})`}
+                            value={editingAnnotationX0}
+                            onChange={(e) => setEditingAnnotationX0(e.target.value)}
+                          />
+                          {ann.type === 'range_x' ? (
+                            <input
+                              aria-label="Edit annotation x1"
+                              placeholder={`x1 (${xUnitLabel})`}
+                              value={editingAnnotationX1}
+                              onChange={(e) => setEditingAnnotationX1(e.target.value)}
+                            />
+                          ) : (
+                            <input
+                              aria-label="Edit annotation y"
+                              placeholder="y (optional)"
+                              value={editingAnnotationY0}
+                              onChange={(e) => setEditingAnnotationY0(e.target.value)}
+                            />
+                          )}
+                        </div>
+                      ) : null}
+                      <div style={{ marginTop: '0.25rem', opacity: 0.8, fontSize: '0.85em' }}>
+                        {ann.author_user_id}
+                      </div>
                     </div>
-                    <button type="button" onClick={() => onDeleteAnnotation(datasetId, ann.annotation_id)} style={{ cursor: 'pointer' }}>
-                      Delete
-                    </button>
+                    <div style={{ display: 'flex', gap: '0.25rem', justifyContent: 'flex-end' }}>
+                      {editingAnnotation?.datasetId === datasetId && editingAnnotation?.annotationId === ann.annotation_id ? (
+                        <>
+                          <button type="button" onClick={() => void onSaveEditingAnnotation()} style={{ cursor: 'pointer' }}>
+                            Save
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingAnnotation(null)
+                              setEditingAnnotationText('')
+                            }}
+                            style={{ cursor: 'pointer' }}
+                          >
+                            Cancel
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingAnnotation({ datasetId, annotationId: ann.annotation_id })
+                              setEditingAnnotationText(ann.text)
+                              const s = seriesById[datasetId]
+                              const canonicalUnit = s?.x_unit ?? unitHints.x
+                              try {
+                                const x0 =
+                                  typeof ann.x0 === 'number' ? convertXScalarFromCanonical(ann.x0, canonicalUnit, displayXUnit) : null
+                                const x1 =
+                                  typeof ann.x1 === 'number' ? convertXScalarFromCanonical(ann.x1, canonicalUnit, displayXUnit) : null
+                                setEditingAnnotationX0(x0 != null ? String(x0) : '')
+                                setEditingAnnotationX1(x1 != null ? String(x1) : '')
+                              } catch {
+                                setEditingAnnotationX0(typeof ann.x0 === 'number' ? String(ann.x0) : '')
+                                setEditingAnnotationX1(typeof ann.x1 === 'number' ? String(ann.x1) : '')
+                              }
+                              setEditingAnnotationY0(typeof ann.y0 === 'number' ? String(ann.y0) : '')
+                            }}
+                            style={{ cursor: 'pointer' }}
+                          >
+                            Edit
+                          </button>
+                          <button type="button" onClick={() => onDeleteAnnotation(datasetId, ann.annotation_id)} style={{ cursor: 'pointer' }}>
+                            Delete
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>

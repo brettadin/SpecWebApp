@@ -127,17 +127,23 @@ This is a repo-wide inventory mapping each CAP spec in `docs/CAPS/` to the curre
 **What’s working now**
 - Dataset annotations API: list/create/update/delete.
 - Two annotation types: point notes and X-range highlights.
-- Plot overlay + toggle to show/hide annotations.
+- Unit-stable anchoring: annotation X is stored in dataset-native units; display-time conversions are applied at render.
+- Visibility controls: global Show Annotations toggle + per-dataset toggles.
+- Annotation list panel with filters (dataset/type/author/text) that apply to both list and plot rendering.
+- Quick edit: inline edit of annotation text and coordinates (point x/y, range_x x0/x1).
+- Delete confirmation; highlight opacity slider for range bands.
 
 **Primary evidence**
 - Annotation model + persistence: `apps/api/app/annotations.py`
 - Annotation endpoints: `apps/api/app/main.py`
-- Plot UI for create/list/toggle: `apps/web/src/pages/PlotPage.tsx`
+- Plot UI for create/list/filter/edit/toggle: `apps/web/src/pages/PlotPage.tsx`
 - API tests: `apps/api/tests/test_annotations.py`
 
 **Not yet / gaps vs full CAP**
-- Rich region highlight types (2D boxes/polygons), filtering/tagging of annotations.
-- Deeper export contract integration (some export is present via CAP-11, but not the full CAP-04 schema).
+- Drag-to-select range creation + interactive handle-dragging for endpoints.
+- Rich annotation types (range_y, dataset_note, reference_marker) and tag/style/link fields.
+- Permissions enforcement beyond local-first assumptions.
+- Export contract details: marking annotations as hidden_in_render when exported with annotations toggled off.
 
 ---
 
