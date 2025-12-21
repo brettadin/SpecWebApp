@@ -1,6 +1,6 @@
 # CAP Progress Inventory (repo scan)
 
-Date: 2025-12-20
+Date: 2025-12-21
 
 This is a repo-wide inventory mapping each CAP spec in `docs/CAPS/` to the current implementation state in `apps/api`, `apps/web`, tests, and supporting docs.
 
@@ -156,7 +156,8 @@ This is a repo-wide inventory mapping each CAP spec in `docs/CAPS/` to the curre
 **Status:** Implemented (core)
 
 **What’s working now**
-- Non-destructive transforms in the plot view: normalization, baseline correction, smoothing.
+- Non-destructive transforms in the plot view: baseline correction, smoothing.
+- View-level normalization: a single toggle can normalize the **displayed Y** across all visible traces (including line lists).
 - X unit display conversion among common spectral units.
 - Derived traces include a provenance record and can be saved to the Library as derived datasets.
 
@@ -169,6 +170,7 @@ This is a repo-wide inventory mapping each CAP spec in `docs/CAPS/` to the curre
 **Not yet / gaps vs full CAP**
 - Full transform “pipeline editor” UX and durable transform stacks for sessions.
 - Wider transform catalog (resampling UX beyond what CAP-06 uses, etc.).
+- Spec completeness: “normalization as a durable, provenance-bearing derived transform” is intentionally simplified to a view-level toggle for now.
 
 ---
 
