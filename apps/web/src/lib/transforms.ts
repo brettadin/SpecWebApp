@@ -40,7 +40,14 @@ function mapToNm(value: number, unit: XUnitCanonical): number {
   if (unit === 'Å') return value / 10
   if (unit === 'µm') return value * 1000
   // cm⁻¹ => nm
-  return 1e7 / value
+  if (!Number.isFinite(value) || value === 0) {
+    throw new Error('Cannot convert cm⁻¹ to nm: input must be finite and non-zero.')
+  }
+  const out = 1e7 / value
+  if (!Number.isFinite(out)) {
+    throw new Error('Cannot convert cm⁻¹ to nm: conversion produced a non-finite value.')
+  }
+  return out
 }
 
 function mapFromNm(valueNm: number, unit: XUnitCanonical): number {
@@ -48,7 +55,14 @@ function mapFromNm(valueNm: number, unit: XUnitCanonical): number {
   if (unit === 'Å') return valueNm * 10
   if (unit === 'µm') return valueNm / 1000
   // nm => cm⁻¹
-  return 1e7 / valueNm
+  if (!Number.isFinite(valueNm) || valueNm === 0) {
+    throw new Error('Cannot convert nm to cm⁻¹: input must be finite and non-zero.')
+  }
+  const out = 1e7 / valueNm
+  if (!Number.isFinite(out)) {
+    throw new Error('Cannot convert nm to cm⁻¹: conversion produced a non-finite value.')
+  }
+  return out
 }
 
 export function convertXFromCanonical(

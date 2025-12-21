@@ -97,6 +97,26 @@ def build_what_i_see_export_zip(*, req: WhatISeeExportRequest) -> bytes:
     ).encode("utf-8")
     files[f"{root}provenance/plot_state.json"] = plot_state_bytes
 
+    # CAP-05: transforms/provenance snapshot (derived traces, normalization, baseline, etc.)
+    transforms_payload = {
+        "exported_at": exported_at,
+        "traces": [
+            {
+                "trace_id": t.trace_id,
+                "label": t.label,
+                "trace_kind": t.trace_kind,
+                "dataset_id": t.dataset_id,
+                "parent_dataset_id": t.parent_dataset_id,
+                "provenance": t.provenance or [],
+            }
+            for t in req.traces
+        ],
+    }
+    transforms_bytes = json.dumps(
+        transforms_payload, indent=2, sort_keys=True, ensure_ascii=False
+    ).encode("utf-8")
+    files[f"{root}provenance/transforms.json"] = transforms_bytes
+
     # Human-readable report
     ps = req.plot_state or {}
     x_unit = _first_nonempty([ps.get("x_unit_label"), ps.get("display_x_unit")])
@@ -157,6 +177,7 @@ def build_what_i_see_export_zip(*, req: WhatISeeExportRequest) -> bytes:
     report_lines.extend(
         [
             "- `provenance/plot_state.json` — plot snapshot (Plotly layout/relayout if provided)",
+            "- `provenance/transforms.json` — transform/provenance records for plotted traces",
             "- `data/plotted_traces.json` — traces + arrays as currently plotted",
             "- `data/plotted_traces.csv` — traces in long-form CSV",
             "- `citations/citations.json` — source pointers/citations when available",
@@ -383,6 +404,7 @@ def build_what_i_see_export_zip(*, req: WhatISeeExportRequest) -> bytes:
         "app": {"name": "Spectra App", "version": version.get("version")},
         "includes": {
             "plot_state": True,
+            "transforms_manifest": True,
             "plotted_traces_csv": True,
             "plotted_traces_json": True,
             "citations": True,
@@ -411,6 +433,7 @@ def build_what_i_see_export_zip(*, req: WhatISeeExportRequest) -> bytes:
         ],
         "paths": {
             "plot_state": "provenance/plot_state.json",
+            "transforms_manifest": "provenance/transforms.json",
             "what_i_did_report": "reports/what_i_did.md",
             "reopen_instructions": "reports/reopen_instructions.md",
             "plotted_traces_json": "data/plotted_traces.json",
@@ -430,6 +453,7 @@ def build_what_i_see_export_zip(*, req: WhatISeeExportRequest) -> bytes:
     readme = (
         b"This is a minimal CAP-11 'what I see' export bundle.\n"
         b"- provenance/plot_state.json: plot snapshot (units, visible traces, toggles)\n"
+        b"- provenance/transforms.json: transform/provenance records for plotted traces\n"
         b"- data/plotted_traces.csv|json: the data currently plotted\n"
         b"- citations/citations.json: citation/pointer info when available\n"
         b"- annotations/annotations.json: annotations for referenced datasets (if present)\n"

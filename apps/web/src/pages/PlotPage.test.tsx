@@ -689,3 +689,169 @@ describe('PlotPage (CAP-03)', () => {
     expect(screen.getAllByText(/Band:/i).length).toBeGreaterThan(0)
   })
 })
+
+describe('PlotPage (CAP-05)', () => {
+  it('normalizes displayed Y for all visible traces (including line lists)', async () => {
+    const fetchMock = vi.fn(async (url: string): Promise<MockResponse> => {
+      if (url.endsWith('/datasets')) {
+        return {
+          ok: true,
+          json: async () => [
+            {
+              id: 'ds-1',
+              name: 'A',
+              created_at: '2025-12-16T00:00:00Z',
+              source_file_name: 'a.csv',
+              sha256: 'x',
+            },
+            {
+              id: 'ds-2',
+              name: 'B',
+              created_at: '2025-12-16T00:00:00Z',
+              source_file_name: 'b.csv',
+              sha256: 'y',
+            },
+            {
+              id: 'ds-3',
+              name: 'Lines',
+              created_at: '2025-12-16T00:00:00Z',
+              source_file_name: 'lines.csv',
+              sha256: 'z',
+              reference: { data_type: 'LineList' },
+            },
+          ],
+        }
+      }
+
+      if (url.includes('/datasets/ds-1/data')) {
+        return {
+          ok: true,
+          json: async () => ({ id: 'ds-1', x: [1, 2, 3], y: [10, -20, 5], x_unit: 'nm', y_unit: 'arb' }),
+        }
+      }
+
+      if (url.includes('/datasets/ds-2/data')) {
+        return {
+          ok: true,
+          json: async () => ({ id: 'ds-2', x: [1, 2, 3], y: [100, -200, 50], x_unit: 'nm', y_unit: 'arb' }),
+        }
+      }
+
+      if (url.includes('/datasets/ds-3/data')) {
+        return {
+          ok: true,
+          json: async () => ({
+            id: 'ds-3',
+            x: [1, 2, 3],
+            y: [1, 2, 3],
+            x_unit: 'nm',
+            y_unit: null,
+            reference: { data_type: 'LineList' },
+          }),
+        }
+      }
+
+      return { ok: false, status: 404, text: async () => 'not found' }
+    })
+
+    vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch)
+
+    render(
+      <MemoryRouter initialEntries={['/plot']}>
+        <PlotPage />
+      </MemoryRouter>,
+    )
+
+    await screen.findByText('A')
+    fireEvent.click(screen.getByLabelText('Toggle A'))
+    fireEvent.click(screen.getByLabelText('Toggle B'))
+    fireEvent.click(screen.getByLabelText('Toggle Lines'))
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Analyze' }))
+    fireEvent.click(screen.getByLabelText('Normalize displayed Y'))
+
+    await waitFor(() => {
+      const plot = screen.getByTestId('plotly')
+      const traces = JSON.parse(plot.getAttribute('data-traces') || '[]') as Array<{ y?: number[]; name?: string }>
+      expect(traces).toHaveLength(3)
+
+      for (const t of traces) {
+        const y = Array.isArray(t.y) ? t.y : []
+        const abs = y.map((v) => Math.abs(v))
+        const max = abs.length ? Math.max(...abs) : 0
+        // All visible traces should be normalized to max(|y|)=1 (or left as-is if empty).
+        expect(max).toBeCloseTo(1, 12)
+      }
+    })
+  })
+
+  it('clears the last applied derived batch (baseline + derived)', async () => {
+    const fetchMock = vi.fn(async (url: string): Promise<MockResponse> => {
+      if (url.endsWith('/datasets')) {
+        return {
+          ok: true,
+          json: async () => [
+            {
+              id: 'ds-1',
+              name: 'My dataset',
+              created_at: '2025-12-16T00:00:00Z',
+              source_file_name: 'a.csv',
+              sha256: 'x',
+            },
+          ],
+        }
+      }
+
+      if (url.includes('/datasets/ds-1/data')) {
+        return {
+          ok: true,
+          json: async () => ({ id: 'ds-1', x: [1, 2, 3, 4, 5], y: [10, 20, 30, 20, 10], x_unit: 'nm', y_unit: 'arb' }),
+        }
+      }
+
+      return { ok: false, status: 404, text: async () => 'not found' }
+    })
+
+    vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch)
+
+    render(
+      <MemoryRouter initialEntries={['/plot']}>
+        <PlotPage />
+      </MemoryRouter>,
+    )
+
+    await screen.findByText('My dataset')
+    fireEvent.click(screen.getByLabelText('Toggle My dataset'))
+
+    // Transforms UI is in the Analyze tab.
+    fireEvent.click(screen.getByRole('tab', { name: 'Analyze' }))
+
+    // Select the dataset as a transform target.
+    fireEvent.click(screen.getByLabelText('My dataset'))
+
+    // Enable polynomial baseline and include the baseline trace.
+    fireEvent.change(screen.getByLabelText('Baseline correction'), { target: { value: 'poly' } })
+    fireEvent.click(screen.getByLabelText('Include baseline trace'))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
+
+    await waitFor(() => {
+      const plot = screen.getByTestId('plotly')
+      const traces = JSON.parse(plot.getAttribute('data-traces') || '[]')
+      expect(traces).toHaveLength(3)
+      const names = traces.map((t: { name?: string }) => t.name)
+      expect(names).toContain('My dataset')
+      expect(names).toContain('BASELINE(poly): My dataset')
+      expect(names).toContain('BASE(poly1): My dataset')
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear last derived' }))
+
+    await waitFor(() => {
+      const plot = screen.getByTestId('plotly')
+      const traces = JSON.parse(plot.getAttribute('data-traces') || '[]')
+      expect(traces).toHaveLength(1)
+      expect(traces[0].name).toBe('My dataset')
+    })
+  })
+})

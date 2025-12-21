@@ -31,6 +31,11 @@ describe('CAP-05 transforms', () => {
     expect(back).toBeCloseTo(xCanonical, 8)
   })
 
+  it('rejects non-finite cm⁻¹ conversions (division by zero)', () => {
+    expect(() => convertXFromCanonical([0], 'cm⁻¹', 'nm')).toThrow()
+    expect(() => convertXScalarToCanonical(0, 'nm', 'cm⁻¹')).toThrow()
+  })
+
   it('max-normalizes y so max(|y|)=1', () => {
     const x = [1, 2, 3]
     const y = [10, -20, 5]
