@@ -82,6 +82,16 @@ type MastInvokeResponse = {
   status: string
   msg?: string
   data?: unknown
+  candidates?: unknown
+  observations?: unknown
+  products?: unknown
+}
+
+type MastNameLookupCandidate = {
+  label?: string
+  ra?: number
+  dec?: number
+  raw?: unknown
 }
 
 type MastNameLookupRow = {
@@ -197,6 +207,8 @@ export function LibraryPage() {
   >(null)
 
   const [refUrl, setRefUrl] = useState('')
+  const [refName, setRefName] = useState('')
+  const [refResolvedUrl, setRefResolvedUrl] = useState<string | null>(null)
   const [refTitle, setRefTitle] = useState('')
   const [refSourceName, setRefSourceName] = useState('NIST Chemistry WebBook')
   const [refCitation, setRefCitation] = useState('')
@@ -530,10 +542,50 @@ export function LibraryPage() {
     setRefError(null)
     setRefDuplicateConflict(null)
 
-    const url = refUrl.trim()
-    if (!url) return
-    if (!refTitle.trim()) {
-      setRefError('Title is required for reference imports.')
+    setRefResolvedUrl(null)
+
+    const urlFromField = refUrl.trim()
+    const name = refName.trim()
+    let url = urlFromField
+    let resolvedQuery: Record<string, unknown> | null = null
+
+    if (!url && name) {
+      setRefBusy(true)
+      try {
+        const res = await fetch('http://localhost:8000/references/resolve/nist-webbook-ir', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, index: 0 }),
+        })
+        if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`)
+
+        const json = (await res.json()) as Array<{
+          title?: string
+          source_name?: string
+          source_url?: string
+          open_page_url?: string | null
+          query?: Record<string, unknown>
+        }>
+
+        const first = Array.isArray(json) ? json[0] : undefined
+        if (!first?.source_url) throw new Error('No reference candidates returned')
+
+        url = String(first.source_url)
+        setRefResolvedUrl(url)
+        resolvedQuery = first.query ?? null
+
+        if (!refTitle.trim() && first.title) setRefTitle(String(first.title))
+        if (!refSourceName.trim() && first.source_name) setRefSourceName(String(first.source_name))
+      } catch (e) {
+        setRefError(e instanceof Error ? e.message : String(e))
+        return
+      } finally {
+        setRefBusy(false)
+      }
+    }
+
+    if (!url) {
+      setRefError('Enter a name (preferred) or a direct JCAMP-DX URL.')
       return
     }
     if (!refCitation.trim()) {
@@ -541,19 +593,26 @@ export function LibraryPage() {
       return
     }
 
+    const title = refTitle.trim() || (name ? `NIST WebBook IR: ${name}` : 'Reference spectrum')
+
     setRefBusy(true)
     try {
       const res = await fetch('http://localhost:8000/references/import/jcamp-dx', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          title: refTitle.trim(),
+          title,
           source_name: refSourceName.trim() || 'Unknown',
           source_url: url,
           citation_text: refCitation.trim(),
           trust_tier: 'Primary/Authoritative',
           license: { redistribution_allowed: refRedistributionAllowed },
-          query: { entered_url: url },
+          query: {
+            ...(resolvedQuery ? { resolved: resolvedQuery } : null),
+            ...(name ? { name } : null),
+            ...(urlFromField ? { url_provided: true } : null),
+            entered_url: url,
+          },
           on_duplicate: duplicatePolicy || 'prompt',
         }),
       })
@@ -570,10 +629,12 @@ export function LibraryPage() {
       notifyDatasetsChanged({ reason: 'reference.import' })
       void logSessionEvent({
         type: 'reference.import',
-        message: `Imported reference: ${refTitle.trim()}`,
-        payload: { source_url: url, source_name: refSourceName.trim() || 'Unknown' },
+        message: `Imported reference: ${title}`,
+        payload: { source_url: url, source_name: refSourceName.trim() || 'Unknown', name: name || null },
       })
       setRefUrl('')
+      setRefName('')
+      setRefResolvedUrl(null)
       setRefTitle('')
       setRefCitation('')
     } catch (e) {
@@ -659,17 +720,33 @@ export function LibraryPage() {
           const lookupJson = (await lookupRes.json()) as MastInvokeResponse
           if (lookupJson.status !== 'COMPLETE') throw new Error(lookupJson.msg || 'MAST name lookup failed')
 
-          const rows = Array.isArray(lookupJson.data) ? (lookupJson.data as MastNameLookupRow[]) : []
-          candidates = rows
-            .map((r) => {
-              const ra = r.resolved_ra ?? r.ra
-              const dec = r.resolved_dec ?? r.dec
-              if (typeof ra !== 'number' || typeof dec !== 'number') return null
-              const label = String(r.input ?? target).trim() || target
-              return { label, ra, dec }
-            })
-            .filter((x): x is TargetResolutionCandidate => Boolean(x))
-            .slice(0, 10)
+          const normalized = Array.isArray(lookupJson.candidates)
+            ? (lookupJson.candidates as MastNameLookupCandidate[])
+            : null
+
+          if (normalized && normalized.length) {
+            candidates = normalized
+              .map((c) => {
+                if (typeof c.ra !== 'number' || typeof c.dec !== 'number') return null
+                const label = String(c.label ?? target).trim() || target
+                return { label, ra: c.ra, dec: c.dec }
+              })
+              .filter((x): x is TargetResolutionCandidate => Boolean(x))
+              .slice(0, 10)
+          } else {
+            // Back-compat fallback: older API versions used raw rows in `data`.
+            const rows = Array.isArray(lookupJson.data) ? (lookupJson.data as MastNameLookupRow[]) : []
+            candidates = rows
+              .map((r) => {
+                const ra = r.resolved_ra ?? r.ra
+                const dec = r.resolved_dec ?? r.dec
+                if (typeof ra !== 'number' || typeof dec !== 'number') return null
+                const label = String(r.input ?? target).trim() || target
+                return { label, ra, dec }
+              })
+              .filter((x): x is TargetResolutionCandidate => Boolean(x))
+              .slice(0, 10)
+          }
 
           retrievedAt = new Date().toISOString()
           if (candidates.length) saveTargetResolutionCache(target, { retrieved_at: retrievedAt, candidates })
@@ -735,7 +812,11 @@ export function LibraryPage() {
       const searchJson = (await searchRes.json()) as MastInvokeResponse
       if (searchJson.status !== 'COMPLETE') throw new Error(searchJson.msg || 'MAST search failed')
 
-      const rows = Array.isArray(searchJson.data) ? (searchJson.data as MastCaomRow[]) : []
+      const rows = Array.isArray(searchJson.observations)
+        ? (searchJson.observations as MastCaomRow[])
+        : Array.isArray(searchJson.data)
+          ? (searchJson.data as MastCaomRow[])
+          : []
       setMastCaomRows(rows)
     } catch (e) {
       setMastError(e instanceof Error ? e.message : String(e))
@@ -836,7 +917,11 @@ export function LibraryPage() {
       const searchJson = (await searchRes.json()) as MastInvokeResponse
       if (searchJson.status !== 'COMPLETE') throw new Error(searchJson.msg || 'MAST search failed')
 
-      const rows = Array.isArray(searchJson.data) ? (searchJson.data as MastCaomRow[]) : []
+      const rows = Array.isArray(searchJson.observations)
+        ? (searchJson.observations as MastCaomRow[])
+        : Array.isArray(searchJson.data)
+          ? (searchJson.data as MastCaomRow[])
+          : []
       setMastCaomRows(rows)
     } catch (e) {
       setMastError(e instanceof Error ? e.message : String(e))
@@ -868,7 +953,12 @@ export function LibraryPage() {
       if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`)
       const json = (await res.json()) as MastInvokeResponse
       if (json.status !== 'COMPLETE') throw new Error(json.msg || 'MAST products failed')
-      const productsRaw = Array.isArray(json.data) ? (json.data as MastProductRow[]) : []
+
+      const productsRaw = Array.isArray(json.products)
+        ? (json.products as MastProductRow[])
+        : Array.isArray(json.data)
+          ? (json.data as MastProductRow[])
+          : []
       const products = [...productsRaw].sort((a, b) => {
         const ar = a.recommended ? 1 : 0
         const br = b.recommended ? 1 : 0
@@ -1314,7 +1404,7 @@ export function LibraryPage() {
         <div style={{ marginTop: '0.25rem' }}>
           <h2 style={{ fontSize: '1rem' }}>Add reference data (CAP-07)</h2>
           <p style={{ marginTop: '0.25rem' }}>
-            URL-based reference import (server fetch + parse). Citation text is required.
+            Type a species name to resolve and import a reference spectrum. URL is optional. Citation text is required.
           </p>
 
           {refError ? (
@@ -1324,10 +1414,22 @@ export function LibraryPage() {
           ) : null}
 
           <details open style={{ marginTop: '0.5rem', border: uiBorder, borderRadius: '0.5rem', padding: '0.5rem' }}>
-            <summary style={{ cursor: 'pointer', fontWeight: 700 }}>Import reference by URL (JCAMP-DX)</summary>
+            <summary style={{ cursor: 'pointer', fontWeight: 700 }}>Import reference spectrum (name first; URL optional)</summary>
             <div style={{ display: 'grid', gap: '0.5rem', maxWidth: 720, marginTop: '0.5rem' }}>
               <label>
-                <div style={{ marginBottom: '0.25rem' }}>JCAMP-DX URL</div>
+                <div style={{ marginBottom: '0.25rem' }}>Name (preferred)</div>
+                <input
+                  aria-label="Reference name"
+                  value={refName}
+                  onChange={(e) => setRefName(e.target.value)}
+                  placeholder="e.g., CO2"
+                  style={{ width: '100%' }}
+                  disabled={refBusy}
+                />
+              </label>
+
+              <label>
+                <div style={{ marginBottom: '0.25rem' }}>JCAMP-DX URL (optional override)</div>
                 <input
                   aria-label="Reference URL"
                   value={refUrl}
@@ -1337,6 +1439,15 @@ export function LibraryPage() {
                   disabled={refBusy}
                 />
               </label>
+
+              {refResolvedUrl ? (
+                <div style={{ fontSize: '0.85rem', opacity: 0.85 }}>
+                  Resolved URL:{' '}
+                  <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }}>
+                    {refResolvedUrl}
+                  </span>
+                </div>
+              ) : null}
 
               <label>
                 <div style={{ marginBottom: '0.25rem' }}>Title</div>

@@ -194,7 +194,11 @@ def test_cap08_mast_name_lookup_and_products(tmp_path: Path, monkeypatch: Monkey
 
         res = client.post("/telescope/mast/name-lookup", json={"input": "M101"})
         assert res.status_code == 200, res.text
-        assert res.json()["status"] == "COMPLETE"
+        nl = res.json()
+        assert nl["status"] == "COMPLETE"
+        assert isinstance(nl.get("candidates"), list)
+        assert nl["candidates"], "expected at least one normalized candidate"
+        assert "ra" in nl["candidates"][0] and "dec" in nl["candidates"][0]
 
         res = client.post(
             "/telescope/mast/caom-search",
@@ -210,6 +214,9 @@ def test_cap08_mast_name_lookup_and_products(tmp_path: Path, monkeypatch: Monkey
         payload = res.json()
         assert payload["status"] == "COMPLETE"
         assert payload["data"][0]["obs_collection"] == "JWST"
+        assert isinstance(payload.get("observations"), list)
+        assert payload["observations"], "expected normalized observations"
+        assert payload["observations"][0]["obs_collection"] == "JWST"
 
         res = client.post("/telescope/mast/caom-products", json={"obsid": 123})
         assert res.status_code == 200, res.text
@@ -217,6 +224,9 @@ def test_cap08_mast_name_lookup_and_products(tmp_path: Path, monkeypatch: Monkey
         assert prod["status"] == "COMPLETE"
         assert prod["data"][0]["productFilename"] == "example_x1d.fits"
         assert prod["data"][0]["recommended"] is True
+        assert isinstance(prod.get("products"), list)
+        assert prod["products"], "expected normalized products"
+        assert prod["products"][0]["productFilename"] == "example_x1d.fits"
     finally:
         httpd.shutdown()
 

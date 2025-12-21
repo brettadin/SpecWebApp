@@ -54,9 +54,12 @@ from .reference_import import (
     ReferenceImportJCAMPRequest,
     ReferenceImportLineListCSVRequest,
     ReferenceImportNistASDLineListRequest,
+    ReferenceResolveCandidate,
+    ReferenceResolveNistWebBookIRRequest,
     import_reference_jcamp_dx,
     import_reference_line_list_csv,
     import_reference_nist_asd_line_list,
+    resolve_reference_nist_webbook_ir_jcamp,
 )
 from .sessions import (
     SessionAddEventRequest,
@@ -542,6 +545,24 @@ def references_import_nist_asd_line_list(
         raise _duplicate_sha256_http_exception(
             sha256=err.sha256, existing_dataset_id=err.existing_dataset_id
         ) from err
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+    except TimeoutError as err:
+        raise HTTPException(status_code=504, detail=str(err)) from err
+    except Exception as err:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=str(err)) from err
+
+
+@app.post(
+    "/references/resolve/nist-webbook-ir",
+    response_model=list[ReferenceResolveCandidate],
+)
+def references_resolve_nist_webbook_ir(
+    req: ReferenceResolveNistWebBookIRRequest,
+) -> list[ReferenceResolveCandidate]:
+    # CAP-07: resolve a typed name into a JCAMP-DX URL (no user-provided URL required).
+    try:
+        return resolve_reference_nist_webbook_ir_jcamp(req)
     except ValueError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
     except TimeoutError as err:

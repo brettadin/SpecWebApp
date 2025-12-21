@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import html
 import io
 import os
 import re
@@ -114,6 +115,19 @@ class ReferenceImportNistASDLineListRequest(BaseModel):
 
     # CAP-02: duplicate handling for identical raw bytes
     on_duplicate: Literal["prompt", "open_existing", "keep_both"] = "prompt"
+
+
+class ReferenceResolveNistWebBookIRRequest(BaseModel):
+    name: str
+    index: int = 0
+
+
+class ReferenceResolveCandidate(BaseModel):
+    title: str
+    source_name: str
+    source_url: str
+    open_page_url: str | None = None
+    query: dict = {}
 
 
 def _guess_filename_from_url(url: str) -> str:
@@ -242,6 +256,96 @@ def import_reference_jcamp_dx(req: ReferenceImportJCAMPRequest) -> DatasetDetail
         )
 
     return detail
+
+
+def resolve_reference_nist_webbook_ir_jcamp(
+    req: ReferenceResolveNistWebBookIRRequest,
+) -> list[ReferenceResolveCandidate]:
+    """Resolve a typed species name to a NIST WebBook IR JCAMP-DX download URL.
+
+    CAP-07 guidance: avoid scraping brittle HTML tables when stable formats exist.
+    NIST WebBook IR spectra provide downloadable JCAMP-DX payloads, but discovery is
+    via HTML pages. We only extract the stable species identifier and construct the
+    JCAMP download URL.
+
+    Env overrides exist for offline tests:
+    - NIST_WEBBOOK_BASE_URL (default: https://webbook.nist.gov)
+    """
+
+    name = req.name.strip()
+    if not name:
+        raise ValueError("name is required")
+
+    index = int(req.index)
+    if index < 0:
+        raise ValueError("index must be >= 0")
+
+    base = (os.environ.get("NIST_WEBBOOK_BASE_URL") or "https://webbook.nist.gov").rstrip("/")
+    # NIST WebBook search by Name.
+    search_params = {"Name": name, "Units": "SI"}
+    search_url = (
+        f"{base}/cgi/cbook.cgi?"
+        f"{urllib.parse.urlencode(search_params, quote_via=urllib.parse.quote_plus)}"
+    )
+
+    with urllib.request.urlopen(search_url, timeout=20) as resp:
+        raw = resp.read(5 * 1024 * 1024)
+
+    text = _decode_text_best_effort(raw)
+    if "No matching species" in text or "No species found" in text:
+        raise ValueError("No matching species found in NIST WebBook")
+
+    # The species page and many result pages include an ID=... parameter.
+    # We keep this intentionally permissive to support multiple NIST formats.
+    match = re.search(r"\bID=([A-Za-z0-9._:-]+)", text)
+    if not match:
+        # Sometimes links use /cgi/cbook.cgi?ID=Cxxxxx; if not present, fail fast.
+        raise ValueError("Could not resolve species ID from NIST WebBook response")
+
+    species_id = match.group(1)
+
+    # Construct a direct JCAMP download URL for IR spectra.
+    # NIST uses Type=IR and Index=... for multiple spectra.
+    jcamp_params = {"JCAMP": species_id, "Type": "IR", "Index": str(index)}
+    jcamp_url = (
+        f"{base}/cgi/cbook.cgi?"
+        f"{urllib.parse.urlencode(jcamp_params, quote_via=urllib.parse.quote_plus)}"
+    )
+
+    open_page_params = {
+        "ID": species_id,
+        "Units": "SI",
+        "Type": "IR",
+        "Index": str(index),
+    }
+    open_page_url = (
+        f"{base}/cgi/cbook.cgi?"
+        f"{urllib.parse.urlencode(open_page_params, quote_via=urllib.parse.quote_plus)}"
+    )
+
+    # Try to extract a nicer title from <title> if present.
+    title = f"NIST WebBook IR: {name}"
+    title_match = re.search(r"<title>(.*?)</title>", text, flags=re.IGNORECASE | re.DOTALL)
+    if title_match:
+        candidate = html.unescape(title_match.group(1))
+        candidate = re.sub(r"\s+", " ", candidate).strip()
+        if candidate:
+            title = f"NIST WebBook IR: {candidate}"
+
+    return [
+        ReferenceResolveCandidate(
+            title=title,
+            source_name="NIST Chemistry WebBook",
+            source_url=jcamp_url,
+            open_page_url=open_page_url,
+            query={
+                "name": name,
+                "index": index,
+                "species_id": species_id,
+                "search_url": search_url,
+            },
+        )
+    ]
 
 
 def _parse_line_list_csv(

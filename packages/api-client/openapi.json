@@ -1598,6 +1598,64 @@
         "title": "ReferenceLicense",
         "type": "object"
       },
+      "ReferenceResolveCandidate": {
+        "properties": {
+          "open_page_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Open Page Url"
+          },
+          "query": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Query",
+            "type": "object"
+          },
+          "source_name": {
+            "title": "Source Name",
+            "type": "string"
+          },
+          "source_url": {
+            "title": "Source Url",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "source_name",
+          "source_url"
+        ],
+        "title": "ReferenceResolveCandidate",
+        "type": "object"
+      },
+      "ReferenceResolveNistWebBookIRRequest": {
+        "properties": {
+          "index": {
+            "default": 0,
+            "title": "Index",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "ReferenceResolveNistWebBookIRRequest",
+        "type": "object"
+      },
       "ReferenceSummary": {
         "properties": {
           "citation_present": {
@@ -3437,6 +3495,48 @@
           }
         },
         "summary": "References Import Nist Asd Line List"
+      }
+    },
+    "/references/resolve/nist-webbook-ir": {
+      "post": {
+        "operationId": "references_resolve_nist_webbook_ir_references_resolve_nist_webbook_ir_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReferenceResolveNistWebBookIRRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ReferenceResolveCandidate"
+                  },
+                  "title": "Response References Resolve Nist Webbook Ir References Resolve Nist Webbook Ir Post",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "References Resolve Nist Webbook Ir"
       }
     },
     "/sessions": {

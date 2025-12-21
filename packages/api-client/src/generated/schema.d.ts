@@ -329,6 +329,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/references/resolve/nist-webbook-ir": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** References Resolve Nist Webbook Ir */
+        post: operations["references_resolve_nist_webbook_ir_references_resolve_nist_webbook_ir_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/sessions": {
         parameters: {
             query?: never;
@@ -1064,6 +1081,34 @@ export interface components {
              * @enum {string}
              */
             redistribution_allowed: "yes" | "no" | "unknown";
+        };
+        /** ReferenceResolveCandidate */
+        ReferenceResolveCandidate: {
+            /** Open Page Url */
+            open_page_url?: string | null;
+            /**
+             * Query
+             * @default {}
+             */
+            query: {
+                [key: string]: unknown;
+            };
+            /** Source Name */
+            source_name: string;
+            /** Source Url */
+            source_url: string;
+            /** Title */
+            title: string;
+        };
+        /** ReferenceResolveNistWebBookIRRequest */
+        ReferenceResolveNistWebBookIRRequest: {
+            /**
+             * Index
+             * @default 0
+             */
+            index: number;
+            /** Name */
+            name: string;
         };
         /** ReferenceSummary */
         ReferenceSummary: {
@@ -2080,6 +2125,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DatasetDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    references_resolve_nist_webbook_ir_references_resolve_nist_webbook_ir_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReferenceResolveNistWebBookIRRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReferenceResolveCandidate"][];
                 };
             };
             /** @description Validation Error */
