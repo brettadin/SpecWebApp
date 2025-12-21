@@ -14,9 +14,11 @@ from .annotations import (
     Annotation,
     AnnotationCreatePoint,
     AnnotationCreateRangeX,
+    AnnotationCreateRangeY,
     AnnotationUpdate,
     create_point_note,
     create_range_x,
+    create_range_y,
     delete_annotation,
     list_annotations,
     update_annotation,
@@ -690,6 +692,14 @@ def annotations_create_point(dataset_id: str, req: AnnotationCreatePoint) -> Ann
 )
 def annotations_create_range_x(dataset_id: str, req: AnnotationCreateRangeX) -> Annotation:
     return create_range_x(dataset_id, req)
+
+
+@app.post(
+    "/datasets/{dataset_id}/annotations/range-y",
+    response_model=Annotation,
+)
+def annotations_create_range_y(dataset_id: str, req: AnnotationCreateRangeY) -> Annotation:
+    return create_range_y(dataset_id, req)
 
 
 @app.put(

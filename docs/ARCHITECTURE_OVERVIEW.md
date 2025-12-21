@@ -27,7 +27,7 @@
 
 - UI: Plot page
 - Control: show annotations toggle -> handler: `setShowAnnotations()` -> API: `GET /datasets/{id}/annotations`
-- Control: add note/range -> handler: `onAddPoint()` / `onAddRange()` -> API: `POST /datasets/{id}/annotations/point` / `POST /datasets/{id}/annotations/range-x`
+- Control: add note/range -> handler: `onAddPoint()` / `onAddRange()` / `onAddRangeY()` -> API: `POST /datasets/{id}/annotations/point` / `POST /datasets/{id}/annotations/range-x` / `POST /datasets/{id}/annotations/range-y`
 
 - UI: Plot page
 - Control: apply transforms -> handler: `onApplyTransforms()` -> derived traces created in-session (non-destructive)

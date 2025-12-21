@@ -367,12 +367,14 @@ def build_what_i_see_export_zip(*, req: WhatISeeExportRequest) -> bytes:
         annotations_md.append("")
 
     files[f"{root}reports/annotations.md"] = ("\n".join(annotations_md)).encode("utf-8")
-    if all_annotations:
-        files[f"{root}annotations/annotations.json"] = json.dumps(
-            all_annotations, indent=2, sort_keys=True, ensure_ascii=False
-        ).encode("utf-8")
+    # CAP-04: always include annotations.json for machine-readable re-use.
+    # If there are no annotations for the exported traces, write an empty list.
+    files[f"{root}annotations/annotations.json"] = json.dumps(
+        all_annotations, indent=2, sort_keys=True, ensure_ascii=False
+    ).encode("utf-8")
 
     version = read_version()
+    annotations_hidden_in_render = bool((req.plot_state or {}).get("show_annotations") is False)
     manifest = {
         "manifest_version": 1,
         "export_id": f"what_i_see:{stamp}",
@@ -385,8 +387,9 @@ def build_what_i_see_export_zip(*, req: WhatISeeExportRequest) -> bytes:
             "plotted_traces_json": True,
             "citations": True,
             "citations_report": True,
-            "annotations": bool(all_annotations),
+            "annotations": True,
             "annotations_report": True,
+            "annotations_hidden_in_render": annotations_hidden_in_render,
             "features": req.features is not None,
             "matches": req.matches is not None,
             "what_i_did_report": True,
@@ -415,7 +418,7 @@ def build_what_i_see_export_zip(*, req: WhatISeeExportRequest) -> bytes:
             "citations": "citations/citations.json",
             "citations_report": "reports/citations.md",
             "annotations_report": "reports/annotations.md",
-            "annotations": "annotations/annotations.json" if all_annotations else None,
+            "annotations": "annotations/annotations.json",
         },
     }
 

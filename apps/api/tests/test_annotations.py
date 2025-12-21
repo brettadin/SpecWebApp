@@ -24,7 +24,14 @@ def test_annotations_crud_roundtrip(tmp_path) -> None:
     # Create point note
     res2 = client.post(
         f"/datasets/{dataset_id}/annotations/point",
-        json={"text": "peak", "x": 2.0, "y": 20.0},
+        json={
+            "text": "peak",
+            "x": 2.0,
+            "y": 20.0,
+            "tags": ["CH4", "  ch4  ", ""],
+            "link": "  https://example.com/paper  ",
+            "style": "  important  ",
+        },
     )
     assert res2.status_code == 200
     point = res2.json()
@@ -32,6 +39,9 @@ def test_annotations_crud_roundtrip(tmp_path) -> None:
     assert point["x0"] == 2.0
     assert point["y0"] == 20.0
     assert point["x_unit"] == "nm"
+    assert point["tags"] == ["CH4"]
+    assert point["link"] == "https://example.com/paper"
+    assert point["style"] == "important"
 
     # Create range (order should normalize)
     res3 = client.post(
@@ -44,23 +54,40 @@ def test_annotations_crud_roundtrip(tmp_path) -> None:
     assert band["x0"] == 1.0
     assert band["x1"] == 3.0
 
+    # Create y-range highlight (order should normalize)
+    res3b = client.post(
+        f"/datasets/{dataset_id}/annotations/range-y",
+        json={"text": "y band", "y0": 30.0, "y1": 10.0},
+    )
+    assert res3b.status_code == 200
+    yband = res3b.json()
+    assert yband["type"] == "range_y"
+    assert yband["y0"] == 10.0
+    assert yband["y1"] == 30.0
+
     # List
     res4 = client.get(f"/datasets/{dataset_id}/annotations")
     assert res4.status_code == 200
     items = res4.json()
-    assert len(items) == 2
+    assert len(items) == 3
 
     # Update
     res5 = client.put(
         f"/datasets/{dataset_id}/annotations/{point['annotation_id']}",
-        json={"text": "updated"},
+        json={"text": "updated", "tags": ["foo", " Foo ", "bar"], "link": "", "style": ""},
     )
     assert res5.status_code == 200
     assert res5.json()["text"] == "updated"
+    assert res5.json()["tags"] == ["foo", "bar"]
+    assert res5.json()["link"] is None
+    assert res5.json()["style"] is None
 
     # Delete
     res6 = client.delete(f"/datasets/{dataset_id}/annotations/{band['annotation_id']}")
     assert res6.status_code == 200
+
+    res6b = client.delete(f"/datasets/{dataset_id}/annotations/{yband['annotation_id']}")
+    assert res6b.status_code == 200
 
     res7 = client.get(f"/datasets/{dataset_id}/annotations")
     assert res7.status_code == 200
