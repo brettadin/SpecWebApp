@@ -107,6 +107,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/datasets/{dataset_id}/annotations/range-y": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Annotations Create Range Y */
+        post: operations["annotations_create_range_y_datasets__dataset_id__annotations_range_y_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/datasets/{dataset_id}/annotations/{annotation_id}": {
         parameters: {
             query?: never;
@@ -517,6 +534,12 @@ export interface components {
             created_at: string;
             /** Dataset Id */
             dataset_id: string;
+            /** Link */
+            link?: string | null;
+            /** Style */
+            style?: string | null;
+            /** Tags */
+            tags?: string[];
             /** Text */
             text: string;
             /** Type */
@@ -538,6 +561,12 @@ export interface components {
         };
         /** AnnotationCreatePoint */
         AnnotationCreatePoint: {
+            /** Link */
+            link?: string | null;
+            /** Style */
+            style?: string | null;
+            /** Tags */
+            tags?: string[];
             /** Text */
             text: string;
             /** X */
@@ -547,6 +576,12 @@ export interface components {
         };
         /** AnnotationCreateRangeX */
         AnnotationCreateRangeX: {
+            /** Link */
+            link?: string | null;
+            /** Style */
+            style?: string | null;
+            /** Tags */
+            tags?: string[];
             /** Text */
             text: string;
             /** X0 */
@@ -554,8 +589,29 @@ export interface components {
             /** X1 */
             x1: number;
         };
+        /** AnnotationCreateRangeY */
+        AnnotationCreateRangeY: {
+            /** Link */
+            link?: string | null;
+            /** Style */
+            style?: string | null;
+            /** Tags */
+            tags?: string[];
+            /** Text */
+            text: string;
+            /** Y0 */
+            y0: number;
+            /** Y1 */
+            y1: number;
+        };
         /** AnnotationUpdate */
         AnnotationUpdate: {
+            /** Link */
+            link?: string | null;
+            /** Style */
+            style?: string | null;
+            /** Tags */
+            tags?: string[] | null;
             /** Text */
             text?: string | null;
             /** X0 */
@@ -1556,6 +1612,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["AnnotationCreateRangeX"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Annotation"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    annotations_create_range_y_datasets__dataset_id__annotations_range_y_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnnotationCreateRangeY"];
             };
         };
         responses: {

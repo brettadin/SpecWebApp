@@ -126,14 +126,14 @@ This is a repo-wide inventory mapping each CAP spec in `docs/CAPS/` to the curre
 
 **What’s working now**
 - Dataset annotations API: list/create/update/delete.
-- Two annotation types: point notes and X-range highlights.
+- Three annotation types: point notes, X-range highlights, and Y-range highlights.
 - Unit-stable anchoring: annotation X is stored in dataset-native units; display-time conversions are applied at render.
 - Visibility controls: global Show Annotations toggle + per-dataset toggles.
 - Annotation list panel with filters (dataset/type/author/text) that apply to both list and plot rendering.
 - Tag metadata (`tags`) + optional citation/reference pointer (`link`) on annotations; editable inline and filterable.
-- Quick edit: inline edit of annotation text and coordinates (point x/y, range_x x0/x1).
+- Quick edit: inline edit of annotation text and coordinates (point x/y, range_x x0/x1, range_y y0/y1).
 - Delete confirmation; highlight opacity slider for range bands.
-- Plot-side handle dragging for `range_x` endpoints with persistence.
+- Plot-side handle dragging for range highlight bounds with persistence.
 - Export contract: `annotations/annotations.json` is always included and referenced in the manifest; exporting with annotations hidden still includes the file and marks it as hidden-in-render.
 
 **Primary evidence**
@@ -145,8 +145,7 @@ This is a repo-wide inventory mapping each CAP spec in `docs/CAPS/` to the curre
 - Export bundle contract + tests: `apps/api/app/export_bundle.py`, `apps/api/tests/test_export_what_i_see.py`
 
 **Not yet / gaps vs full CAP**
-- Rich annotation types (range_y, dataset_note, reference_marker).
-- Annotation `style` field (beyond global opacity control).
+- Rich annotation types (dataset_note, reference_marker).
 - Permissions enforcement beyond local-first assumptions.
 - Audit event logging on create/update/delete (beyond basic persistence), if/when CAP-02 audit is the source of truth for this.
 
