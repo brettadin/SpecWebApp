@@ -8,12 +8,9 @@ import {
   convertXScalarFromCanonical,
   convertXScalarToCanonical,
   normalizeXUnit,
-  normalizeY,
   savitzkyGolaySmooth,
   type BaselineMode,
   type DisplayXUnit,
-  type NormalizationMode,
-  type RangeSelection,
   type SmoothingMode,
   differentialCompare,
   type AlignmentMethod,
@@ -110,6 +107,7 @@ type TransformRecord = {
 
 type DerivedTrace = {
   traceId: string
+  applyGroupId?: string
   parentDatasetId: string
   name: string
   x: number[]
@@ -279,6 +277,15 @@ function extractShapeEdits(
   return out
 }
 
+function maxAbs(values: number[]): number {
+  let m = 0
+  for (const v of values) {
+    const a = Math.abs(v)
+    if (a > m) m = a
+  }
+  return m
+}
+
 function makeTimestampForFilename(d: Date) {
   // e.g. 2025-12-17T21-08-50Z
   return d
@@ -331,10 +338,8 @@ export function PlotPage() {
   const [activeInspectorTab, setActiveInspectorTab] = useState<InspectorTab>('traces')
 
   const [displayXUnit, setDisplayXUnit] = useState<DisplayXUnit>('as-imported')
+  const [normalizeDisplayY, setNormalizeDisplayY] = useState(false)
   const [selectedTransformDatasetIds, setSelectedTransformDatasetIds] = useState<string[]>([])
-  const [normMode, setNormMode] = useState<NormalizationMode>('none')
-  const [normRangeX0, setNormRangeX0] = useState('')
-  const [normRangeX1, setNormRangeX1] = useState('')
   const [baselineMode, setBaselineMode] = useState<BaselineMode>('none')
   const [baselineOrder, setBaselineOrder] = useState('1')
   const [includeBaselineTrace, setIncludeBaselineTrace] = useState(false)
@@ -646,6 +651,7 @@ export function PlotPage() {
         traceStates,
         derivedTraces,
         displayXUnit,
+        normalizeDisplayY,
         showAnnotations,
         filter,
         plotlyRelayout,
@@ -658,9 +664,6 @@ export function PlotPage() {
         aliasByDerivedId,
 
         selectedTransformDatasetIds,
-        normMode,
-        normRangeX0,
-        normRangeX1,
         baselineMode,
         baselineOrder,
         includeBaselineTrace,
@@ -700,12 +703,10 @@ export function PlotPage() {
     diffTargetGrid,
     diffTau,
     displayXUnit,
+    normalizeDisplayY,
     fastViewEnabled,
     filter,
     includeBaselineTrace,
-    normMode,
-    normRangeX0,
-    normRangeX1,
     plotlyRelayout,
     savgolPolyorder,
     savgolWindow,
@@ -777,6 +778,9 @@ export function PlotPage() {
         })
         setDerivedTraces(snap.state.derivedTraces)
         setDisplayXUnit(snap.state.displayXUnit)
+        if (typeof (snap.state as unknown as { normalizeDisplayY?: unknown }).normalizeDisplayY === 'boolean') {
+          setNormalizeDisplayY(Boolean((snap.state as unknown as { normalizeDisplayY?: boolean }).normalizeDisplayY))
+        }
         setShowAnnotations(snap.state.showAnnotations)
         setFilter(snap.state.filter)
         setPlotlyRelayout(snap.state.plotlyRelayout)
@@ -793,9 +797,6 @@ export function PlotPage() {
         }
 
         setSelectedTransformDatasetIds(snap.state.selectedTransformDatasetIds)
-        setNormMode(snap.state.normMode)
-        setNormRangeX0(snap.state.normRangeX0)
-        setNormRangeX1(snap.state.normRangeX1)
         setBaselineMode(snap.state.baselineMode)
         setBaselineOrder(snap.state.baselineOrder)
         setIncludeBaselineTrace(snap.state.includeBaselineTrace)
@@ -1158,6 +1159,8 @@ export function PlotPage() {
       return `${parts.join('<br>')}<extra></extra>`
     }
 
+    const yScaleByTraceKey = new Map<string, number>()
+
     const traces = activeSeries
       .filter((t) => t.series)
       .map((t, idx) => {
@@ -1181,6 +1184,19 @@ export function PlotPage() {
           x = dec.x
           y = dec.y
           anyDecimated = true
+        }
+
+        const traceKey = `o:${t.id}`
+        const yScale = normalizeDisplayY
+          ? (() => {
+              const m = maxAbs(y)
+              if (!Number.isFinite(m) || m <= 0) return 1
+              return 1 / m
+            })()
+          : 1
+        yScaleByTraceKey.set(traceKey, yScale)
+        if (normalizeDisplayY && yScale !== 1) {
+          y = y.map((v) => v * yScale)
         }
 
         if (s.reference?.data_type === 'LineList') {
@@ -1241,6 +1257,19 @@ export function PlotPage() {
           anyDecimated = true
         }
 
+        const traceKey = `d:${t.traceId}`
+        const yScale = normalizeDisplayY
+          ? (() => {
+              const m = maxAbs(y)
+              if (!Number.isFinite(m) || m <= 0) return 1
+              return 1 / m
+            })()
+          : 1
+        yScaleByTraceKey.set(traceKey, yScale)
+        if (normalizeDisplayY && yScale !== 1) {
+          y = y.map((v) => v * yScale)
+        }
+
         const name = (aliasByDerivedId[t.traceId] ?? t.name).trim() || t.name
         return {
           type: 'scatter',
@@ -1274,12 +1303,13 @@ export function PlotPage() {
       const out: Array<Record<string, unknown>> = []
       for (const feats of byTrace.values()) {
         const traceName = feats[0]?.trace_name ?? 'trace'
+        const yScale = normalizeDisplayY ? (yScaleByTraceKey.get(feats[0]?.trace_key ?? '') ?? 1) : 1
         out.push({
           type: 'scatter',
           mode: 'markers',
           name: `${traceName} (features)`,
           x: feats.map((f) => f.center_x),
-          y: feats.map((f) => f.value_y),
+          y: feats.map((f) => f.value_y * yScale),
           marker: { size: 9, symbol: featureMode === 'dips' ? 'triangle-down' : 'triangle-up' },
           text: feats.map((f) => {
             const p = typeof f.prominence === 'number' ? `prom=${f.prominence.toFixed(3)}` : 'prom=?'
@@ -1293,12 +1323,13 @@ export function PlotPage() {
       if (highlightedFeatureRowId) {
         const selected = featureResults.find((f) => featureRowId(f) === highlightedFeatureRowId)
         if (selected) {
+          const yScale = normalizeDisplayY ? (yScaleByTraceKey.get(selected.trace_key) ?? 1) : 1
           out.push({
             type: 'scatter',
             mode: 'markers',
             name: `${selected.trace_name} (selected feature)`,
             x: [selected.center_x],
-            y: [selected.value_y],
+            y: [selected.value_y * yScale],
             marker: { size: 14, symbol: 'circle-open', line: { width: 2 } },
             hovertemplate: `${selected.trace_name} (selected)<br>x=%{x} ${xUnit}<br>y=%{y} ${yUnit}<extra></extra>`,
           })
@@ -1335,12 +1366,14 @@ export function PlotPage() {
         const s = t.series as DatasetSeries | undefined
         const canonicalUnit = s?.x_unit ?? unitHints.x
 
+        const yScale = normalizeDisplayY ? (yScaleByTraceKey.get(`o:${t.id}`) ?? 1) : 1
+
         return {
           type: 'scatter',
           mode: 'markers',
           name: displayName,
           x: points.map((p) => convertXScalarFromCanonical(p.x0 as number, canonicalUnit, displayXUnit)),
-          y: points.map((p) => p.y0 ?? null),
+          y: points.map((p) => (p.y0 == null ? null : p.y0 * yScale)),
           marker: { size: 8, symbol: 'circle-open' },
           hovertemplate: `${displayName}<br>x=%{x} ${xUnit}<br>y=%{y} ${yUnit}<br>%{text}<extra></extra>`,
           text: points.map((p) => p.text),
@@ -1364,6 +1397,7 @@ export function PlotPage() {
     derivedTraces,
     detailedTooltips,
     displayXUnit,
+    normalizeDisplayY,
     fastViewEnabled,
     featureMode,
     featureResults,
@@ -1392,6 +1426,14 @@ export function PlotPage() {
       const anns = annotationsByDatasetId[t.id] ?? []
       const s = t.series as DatasetSeries | undefined
       const canonicalUnit = s?.x_unit ?? unitHints.x
+      const yScale = (() => {
+        if (!normalizeDisplayY) return 1
+        if (!s) return 1
+        const coerced = coerceFinitePairs(s.x, s.y)
+        const m = maxAbs(coerced.y)
+        if (!Number.isFinite(m) || m <= 0) return 1
+        return 1 / m
+      })()
       for (const a of anns) {
         if (annotationFilterType === 'point') continue
         if (annotationFilterType === 'other' && (a.type === 'point' || a.type === 'range_x' || a.type === 'range_y')) continue
@@ -1437,8 +1479,8 @@ export function PlotPage() {
             yref: 'y',
             x0: 0,
             x1: 1,
-            y0: a.y0,
-            y1: a.y1,
+            y0: a.y0 * yScale,
+            y1: a.y1 * yScale,
             line: { width: 1, color: '#e5e7eb' },
             fillcolor: `rgba(229,231,235,${Math.max(0, Math.min(1, annotationHighlightOpacity))})`,
             editable: true,
@@ -1466,6 +1508,7 @@ export function PlotPage() {
     annotationVisibilityByDatasetId,
     annotationsByDatasetId,
     displayXUnit,
+    normalizeDisplayY,
     showAnnotations,
     unitHints.x,
   ])
@@ -1596,7 +1639,13 @@ export function PlotPage() {
   }, [featureResults, highlightedFeatureRowId])
 
   function clearLastDerived() {
-    setDerivedTraces((prev) => prev.slice(0, -1))
+    setDerivedTraces((prev) => {
+      if (!prev.length) return prev
+      const last = prev[prev.length - 1]
+      const groupId = last.applyGroupId
+      if (!groupId) return prev.slice(0, -1)
+      return prev.filter((t) => t.applyGroupId !== groupId)
+    })
   }
 
   function clearAllDerived() {
@@ -1619,20 +1668,7 @@ export function PlotPage() {
     try {
       const createdAt = nowIso()
       const createdBy = 'local/anonymous'
-
-      const selection: RangeSelection | null =
-        normRangeX0.trim() !== '' && normRangeX1.trim() !== ''
-          ? {
-              x0: Number(normRangeX0),
-              x1: Number(normRangeX1),
-              unit: displayXUnit,
-              method: 'manual',
-            }
-          : null
-
-      if (selection && (!Number.isFinite(selection.x0 as number) || !Number.isFinite(selection.x1 as number))) {
-        throw new Error('Normalization range must be numeric (x0 and x1).')
-      }
+      const applyGroupId = makeId('apply')
 
       const next: DerivedTrace[] = []
       const skippedLineLists: string[] = []
@@ -1676,16 +1712,6 @@ export function PlotPage() {
           })
         }
 
-        if (normMode !== 'none') {
-          const out = normalizeY(s.x, y, normMode, selection, s.x_unit)
-          y = out.y
-          prefixes.push(`NORM(${normMode})`)
-          provenanceSteps.push({
-            type: 'normalize',
-            parameters: { mode: normMode, selection: out.usedSelection, stats: out.stats },
-          })
-        }
-
         if (smoothingMode === 'savgol') {
           const windowLength = Number(savgolWindow)
           const polyorder = Number(savgolPolyorder)
@@ -1700,9 +1726,7 @@ export function PlotPage() {
           })
         }
 
-        if (!prefixes.length) {
-          throw new Error('Select at least one transform (baseline, normalize, or smoothing).')
-        }
+        if (!prefixes.length) throw new Error('Select at least one transform (baseline or smoothing).')
 
         const derivedId = makeId('derived')
         const prefix = prefixes.join('+')
@@ -1723,6 +1747,7 @@ export function PlotPage() {
           const baselineTraceId = makeId('derived')
           next.push({
             traceId: baselineTraceId,
+            applyGroupId,
             parentDatasetId: datasetId,
             name: `BASELINE(${String(step.parameters.mode)}): ${baseName}`,
             x,
@@ -1737,6 +1762,7 @@ export function PlotPage() {
 
         next.push({
           traceId: derivedId,
+          applyGroupId,
           parentDatasetId: datasetId,
           name: `${prefix}: ${baseName}`,
           x,
@@ -1771,10 +1797,6 @@ export function PlotPage() {
           dataset_ids: selectedTransformDatasetIds,
           skipped_line_lists: skippedLineLists,
           baseline: baselineMode === 'poly' ? { mode: 'poly', order: Number(baselineOrder) } : { mode: baselineMode },
-          normalize: {
-            mode: normMode,
-            selection,
-          },
           smoothing: smoothingMode === 'savgol'
             ? { mode: 'savgol', window_length: Number(savgolWindow), polyorder: Number(savgolPolyorder) }
             : { mode: smoothingMode },
@@ -2866,6 +2888,7 @@ export function PlotPage() {
         display_x_unit: displayXUnit,
         x_unit_label: xUnitLabel,
         y_unit_label: formatUnit(unitHints.y),
+        normalize_display_y: normalizeDisplayY,
         visible_dataset_ids: visibleDatasetIds,
         visible_derived_trace_ids: derivedTraces.filter((t) => t.visible).map((t) => t.traceId),
         show_annotations: showAnnotations,
@@ -3539,34 +3562,19 @@ export function PlotPage() {
         </div>
 
         <div style={{ marginTop: '0.5rem' }}>
-          <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Y normalization/scaling</label>
-          <select
-            aria-label="Y normalization"
-            value={normMode}
-            onChange={(e) => setNormMode(e.target.value as NormalizationMode)}
-            style={{ width: '100%' }}
-          >
-            <option value="none">None</option>
-            <option value="max">Max normalization</option>
-            <option value="min-max">Min-max scaling</option>
-            <option value="z-score">Z-score</option>
-            <option value="area">Area normalization</option>
-          </select>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginTop: '0.5rem' }}>
+          <label style={{ display: 'block', fontWeight: 700, marginBottom: '0.25rem' }}>Y normalization (view-only)</label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <input
-              aria-label="Normalization range x0"
-              placeholder={`x0 (${xUnitLabel}) optional`}
-              value={normRangeX0}
-              onChange={(e) => setNormRangeX0(e.target.value)}
+              aria-label="Normalize displayed Y"
+              type="checkbox"
+              checked={normalizeDisplayY}
+              onChange={(e) => setNormalizeDisplayY(e.target.checked)}
             />
-            <input
-              aria-label="Normalization range x1"
-              placeholder={`x1 (${xUnitLabel}) optional`}
-              value={normRangeX1}
-              onChange={(e) => setNormRangeX1(e.target.value)}
-            />
-          </div>
+            Normalize displayed Y for all visible traces
+          </label>
+          <p style={{ marginTop: '0.25rem', opacity: 0.85 }}>
+            Scales each visible trace (including line lists) so its max(|y|) becomes 1.
+          </p>
         </div>
 
         <div style={{ marginTop: '0.5rem' }}>

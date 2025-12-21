@@ -3,7 +3,6 @@ import type {
   BaselineMode,
   DifferentialOp,
   DisplayXUnit,
-  NormalizationMode,
   RatioHandling,
   SmoothingMode,
 } from './transforms'
@@ -44,6 +43,7 @@ export type PlotSnapshotV1 = {
     traceStates: TraceState[]
     derivedTraces: DerivedTrace[]
     displayXUnit: DisplayXUnit
+    normalizeDisplayY?: boolean
     showAnnotations: boolean
     filter: string
     plotlyRelayout: Record<string, unknown> | null
@@ -57,9 +57,6 @@ export type PlotSnapshotV1 = {
     aliasByDerivedId?: Record<string, string>
 
     selectedTransformDatasetIds: string[]
-    normMode: NormalizationMode
-    normRangeX0: string
-    normRangeX1: string
     baselineMode: BaselineMode
     baselineOrder: string
     includeBaselineTrace: boolean

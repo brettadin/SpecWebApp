@@ -85,6 +85,7 @@ def test_export_what_i_see_includes_plot_state_and_traces(tmp_path) -> None:
     names = _zip_names(res.content)
     assert any(n.endswith("MANIFEST.json") for n in names)
     assert any(n.endswith("provenance/plot_state.json") for n in names)
+    assert any(n.endswith("provenance/transforms.json") for n in names)
     assert any(n.endswith("reports/what_i_did.md") for n in names)
     assert any(n.endswith("reports/reopen_instructions.md") for n in names)
     assert any(n.endswith("reports/citations.md") for n in names)
@@ -97,6 +98,12 @@ def test_export_what_i_see_includes_plot_state_and_traces(tmp_path) -> None:
     plot_state_name = [n for n in names if n.endswith("provenance/plot_state.json")][0]
     plot_state = _zip_read_json(res.content, plot_state_name)
     assert plot_state.get("plotly_layout") == {"xaxis": {"range": [0, 10]}}
+
+    transforms_name = [n for n in names if n.endswith("provenance/transforms.json")][0]
+    transforms = _zip_read_json(res.content, transforms_name)
+    assert isinstance(transforms.get("traces"), list)
+    assert transforms["traces"][0].get("trace_id") == f"o:{detail.id}"
+    assert transforms["traces"][0].get("provenance") == []
 
     traces_name = [n for n in names if n.endswith("data/plotted_traces.json")][0]
     traces_json = _zip_read_json(res.content, traces_name)
@@ -127,6 +134,8 @@ def test_export_what_i_see_includes_plot_state_and_traces(tmp_path) -> None:
     assert manifest.get("includes", {}).get("annotations") is True
     assert manifest.get("includes", {}).get("annotations_hidden_in_render") is False
     assert manifest.get("paths", {}).get("annotations") == "annotations/annotations.json"
+    assert manifest.get("includes", {}).get("transforms_manifest") is True
+    assert manifest.get("paths", {}).get("transforms_manifest") == "provenance/transforms.json"
 
 
 def test_export_what_i_see_includes_citations_when_present(tmp_path) -> None:
